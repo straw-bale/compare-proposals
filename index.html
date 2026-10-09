@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proposal Comparison</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="site">
+      <a class="mark" href="/">Proposal Comparison</a>
+      <span class="meta">MEP — Scope &amp; Fees</span>
+    </header>
+
+    <main>
+      <section id="intake">
+        <p class="lede">
+          Drop in two or more consultant proposals. Each PDF is ingested, then
+          the scopes are normalized into a single checklist and the fees lined
+          up side by side.
+        </p>
+
+        <label class="field">
+          <span class="label">Project</span>
+          <input
+            id="project"
+            type="text"
+            placeholder="Project name (optional)"
+            autocomplete="off"
+          />
+        </label>
+
+        <label id="drop" class="drop">
+          <input
+            id="file-input"
+            type="file"
+            accept="application/pdf,.pdf"
+            multiple
+            hidden
+          />
+          <span>Drop PDFs here, or <u>browse</u></span>
+        </label>
+
+        <ol id="files" class="files"></ol>
+
+        <div class="actions">
+          <button id="run" class="btn primary" disabled>Compare</button>
+          <button id="clear" class="btn" hidden>Clear</button>
+          <span id="status" class="status"></span>
+        </div>
+
+        <div id="saved" class="saved" hidden>
+          <h2 class="label">Recent comparisons <span class="note">saved in this browser only</span></h2>
+          <ol id="saved-list"></ol>
+        </div>
+      </section>
+
+      <section id="results" hidden>
+        <div class="print-head">
+          <div class="mark">Proposal Comparison</div>
+          <div class="meta" id="print-meta"></div>
+        </div>
+
+        <div class="toolbar">
+          <label class="toggle"
+            ><input id="diff-only" type="checkbox" /> Show differences
+            only</label
+          >
+          <span class="tools">
+            <button id="chat-open" class="btn">Ask / correct</button>
+            <button id="print" class="btn">Print / PDF</button>
+          </span>
+        </div>
+
+        <div class="block briefing">
+          <h2 class="label">Briefing</h2>
+          <div id="briefing"></div>
+        </div>
+
+        <div class="block">
+          <h2 class="label">Fees</h2>
+          <div class="scroll"><table id="fees" class="grid"></table></div>
+        </div>
+
+        <div class="block">
+          <h2 class="label">Scope</h2>
+          <p class="legend">
+            <b>✓</b> Included <b>Opt</b> Optional / add-on <b>✕</b> Excluded
+            <b>—</b> Not mentioned
+          </p>
+          <div class="scroll"><table id="scope" class="grid"></table></div>
+        </div>
+
+        <details class="block more">
+          <summary class="label">Proposal details — exclusions, assumptions, deliverables</summary>
+          <div id="notes" class="notes"></div>
+        </details>
+      </section>
+    </main>
+
+    <aside id="chat" class="chat" hidden>
+      <div class="chat-head">
+        <span class="label">Ask or correct</span>
+        <button id="chat-close" class="link">Close</button>
+      </div>
+      <div id="chat-log" class="chat-log">
+        <p class="chat-hint">
+          Ask about anything in the proposals, or tell me what to fix. For example, "Does Burns include hydraulic
+          calcs?" or "RPA's CA visits are wrong, check p.5". Corrections update the analysis in place.
+        </p>
+      </div>
+      <input id="reattach-input" type="file" accept="application/pdf,.pdf" multiple hidden />
+      <form id="chat-form" class="chat-form">
+        <textarea id="chat-input" rows="3" placeholder="Ask a question or request a correction…"></textarea>
+        <div class="chat-actions">
+          <span id="chat-status" class="status"></span>
+          <button id="chat-send" class="btn primary" type="submit">Send</button>
+        </div>
+      </form>
+    </aside>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

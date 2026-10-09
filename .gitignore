@@ -1,0 +1,8 @@
+node_modules
+dist
+.env.local
+.env
+.vercel
+
+# Real client proposals used for testing; never commit
+.test_proposals/
