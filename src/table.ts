@@ -2,7 +2,7 @@ import type { Comparison, Proposal } from "../lib/claude";
 
 type FeeItem = Proposal["fee_items"][number];
 /** A proposal plus the uploaded file it came from and its Anthropic file id (both added client-side). */
-export type Sourced = Proposal & { source_file?: string; file_id?: string };
+export type Sourced = Proposal & { source_file?: string; file_id?: string; pdf_tokens?: number; source_hash?: string };
 
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -127,7 +127,7 @@ export function feeTable(proposals: Sourced[], cmp: Comparison): string {
             const lines = items
               .map((f) => {
                 const tag = BASIS[f.basis];
-                const sub = [items.length > 1 || f.label !== r.label ? f.label : "", tag, f.page != null ? `p. ${f.page}` : ""]
+                const sub = [items.length > 1 || f.label !== r.label ? f.label : "", tag, f.page ? `p. ${f.page}` : ""]
                   .filter(Boolean)
                   .join(" · ");
                 return `<div>${feeValue(f)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</div>`;
@@ -174,7 +174,7 @@ export function feeTable(proposals: Sourced[], cmp: Comparison): string {
   return head(proposals) + `<tbody>${rows.join("")}</tbody>`;
 }
 
-const SYMBOL = { included: "✓", optional: "Opt", excluded: "✕", not_mentioned: "—" } as const;
+const STATUS = { included: "Included", optional: "Optional", excluded: "Excluded", not_mentioned: "Not mentioned" } as const;
 
 export function scopeTable(proposals: Sourced[], cmp: Comparison): string {
   const body = cmp.categories
@@ -187,8 +187,8 @@ export function scopeTable(proposals: Sourced[], cmp: Comparison): string {
           return `<tr class="${cls}"><th scope="row">${esc(it.item)}</th>${cells
             .map((c) => {
               const st = c?.status ?? "not_mentioned";
-              const title = [c?.note, c?.page != null ? `p. ${c.page}` : ""].filter(Boolean).join(" · ");
-              return `<td class="st st-${st}" title="${esc(title)}">${SYMBOL[st]}${
+              const title = [c?.note, c?.page ? `p. ${c.page}` : ""].filter(Boolean).join(" · ");
+              return `<td class="st st-${st}" title="${esc(title)}">${STATUS[st]}${
                 c?.note ? `<span class="sub">${esc(c.note)}</span>` : ""
               }</td>`;
             })

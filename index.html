@@ -7,17 +7,29 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <div id="gate" class="gate" hidden>
+      <form id="gate-form">
+        <span class="mark">Proposal Comparison</span>
+        <label class="field">
+          <span class="label">Access code</span>
+          <input id="gate-input" type="password" autocomplete="current-password" autofocus />
+        </label>
+        <button class="btn primary" type="submit">Enter</button>
+        <span id="gate-error" class="status error"></span>
+      </form>
+    </div>
     <header class="site">
       <a class="mark" href="/">Proposal Comparison</a>
-      <span class="meta">MEP — Scope &amp; Fees</span>
+      <span class="meta">Consultant proposals — Scope &amp; Fees</span>
     </header>
 
     <main>
       <section id="intake">
         <p class="lede">
-          Drop in two or more consultant proposals. Each PDF is ingested, then
-          the scopes are normalized into a single checklist and the fees lined
-          up side by side.
+          Drop in one consultant proposal to get its key facts, or several to
+          compare them. Works for any architecture or engineering discipline. Scopes
+          are normalized into a single checklist and the fees lined up side by
+          side.
         </p>
 
         <label class="field">
@@ -40,6 +52,11 @@
           />
           <span>Drop PDFs here, or <u>browse</u></span>
         </label>
+        <p class="estimate tip">
+          Tip: every page costs money to read. Upload only the pages that matter: scope, fees, assumptions and
+          exclusions. Leave out resumes, firm history, project sheets and marketing pages. A trimmed PDF is cheaper,
+          faster and often more accurate.
+        </p>
 
         <ol id="files" class="files"></ol>
 
@@ -48,6 +65,7 @@
           <button id="clear" class="btn" hidden>Clear</button>
           <span id="status" class="status"></span>
         </div>
+        <p id="run-estimate" class="estimate"></p>
 
         <div id="saved" class="saved" hidden>
           <h2 class="label">Recent comparisons <span class="note">saved in this browser only</span></h2>
@@ -66,6 +84,7 @@
             ><input id="diff-only" type="checkbox" /> Show differences
             only</label
           >
+          <span id="cost" class="cost"></span>
           <span class="tools">
             <button id="chat-open" class="btn">Ask / correct</button>
             <button id="print" class="btn">Print / PDF</button>
@@ -85,8 +104,10 @@
         <div class="block">
           <h2 class="label">Scope</h2>
           <p class="legend">
-            <b>✓</b> Included <b>Opt</b> Optional / add-on <b>✕</b> Excluded
-            <b>—</b> Not mentioned
+            <span><b class="st-included">Included</b> in the proposal's scope</span>
+            <span><b class="st-optional">Optional</b> offered as an add-on at extra cost</span>
+            <span><b class="st-excluded">Excluded</b> the proposal says it is not included</span>
+            <span><b class="st-not_mentioned">Not mentioned</b> the proposal doesn't say; ask before assuming</span>
           </p>
           <div class="scroll"><table id="scope" class="grid"></table></div>
         </div>
@@ -105,13 +126,15 @@
       </div>
       <div id="chat-log" class="chat-log">
         <p class="chat-hint">
-          Ask about anything in the proposals, or tell me what to fix. For example, "Does Burns include hydraulic
-          calcs?" or "RPA's CA visits are wrong, check p.5". Corrections update the analysis in place.
+          Ask about anything in the proposals, or tell me what to fix. For example, "Are site visits during
+          construction included?" or "The fee for design development looks wrong, check page 9". Corrections
+          update the analysis in place.
         </p>
       </div>
       <input id="reattach-input" type="file" accept="application/pdf,.pdf" multiple hidden />
       <form id="chat-form" class="chat-form">
         <textarea id="chat-input" rows="3" placeholder="Ask a question or request a correction…"></textarea>
+        <p id="chat-cost" class="estimate"></p>
         <div class="chat-actions">
           <span id="chat-status" class="status"></span>
           <button id="chat-send" class="btn primary" type="submit">Send</button>

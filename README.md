@@ -1,10 +1,10 @@
 # Proposal Comparison
 
-Upload two or more MEP consultant proposals (PDF). Claude reads each one, then the tool shows:
+Upload one consultant proposal (PDF) to get its key facts, or several to compare them. It works for any architecture or engineering discipline (MEP, structural, AV, acoustics, lighting, and others). Claude reads each one, then the tool shows:
 
 - **Fees**: total (lowest highlighted), per-phase breakdown, additional services, reimbursables, hourly rates, CA visits, schedule, payment terms. Totals are calculated in code from the fees each proposal states.
 - **Briefing**: headline, overview, flagged issues/inconsistencies, and clarification questions to send each firm.
-- **Scope**: a normalized checklist grouped by discipline. Each firm is marked ✓ included / Opt / ✕ excluded / — not mentioned, and hovering a cell shows its note and page reference. A "Show differences only" toggle hides rows where every firm matches.
+- **Scope**: a normalized checklist grouped by discipline. Each firm is marked Included / Optional (add-on) / Excluded (explicitly) / Not mentioned (silent, so ask), and hovering a cell shows its note and page reference. A "Show differences only" toggle hides rows where every firm matches.
 - **Proposal details** (collapsed): exclusions, assumptions, clarifications, and deliverables for each firm.
 - **Ask / correct**: a chat panel that can see the original PDFs and the analysis. Ask questions, or ask it to fix something; corrections update the tables and briefing in place.
 - **Recent comparisons**: every comparison (and its chat) is saved automatically in this browser and can be reopened or deleted from the start page. Nothing is shared between computers or browsers. If a saved comparison is older than a day, its PDFs have been deleted from Anthropic, so the chat offers **Re-attach PDFs** (pick the same files) instead of re-running the analysis.
@@ -24,7 +24,7 @@ Open http://localhost:5173.
 
 1. `vercel` (or import the repo in the Vercel dashboard; it auto-detects Vite).
 2. Add `ANTHROPIC_API_KEY` under Project → Settings → Environment Variables.
-3. **Turn on Deployment Protection** (Settings → Deployment Protection: password or Vercel Authentication) before sharing the URL. Otherwise anyone with the link can use your API key.
+3. **Set the access code:** add `ACCESS_CODE` (e.g. `r3a`; matching ignores case) to the environment variables. The site then asks for it once per browser, and every API endpoint rejects requests without it, so nobody can use your API key without the code. Keep it out of the code, since the repo is public. When `ACCESS_CODE` isn't set (local dev), no code is asked for.
 
 Limits on Vercel: each PDF must be under ~4.4 MB (the platform caps request bodies at 4.5 MB), so compress larger PDFs first. Each request can run for up to 5 minutes. Locally there's no size cap.
 
@@ -38,6 +38,18 @@ Limits on Vercel: each PDF must be under ~4.4 MB (the platform caps request bodi
 - Model: `claude-opus-5-5` at `effort: "high"`, with structured outputs and the server-side refusal fallback enabled.
 - Prompts and schemas live in `lib/claude.ts`. Edit the prompts there to change how scope gets categorized.
 - `dev-api-plugin.ts` serves the `/api` handlers inside the Vite dev server, so local dev doesn't need the Vercel CLI.
+
+## Costs
+
+The app shows cost notes as it goes. Prices live in `lib/cost.ts`; update them there if Anthropic pricing changes.
+
+- **Before a run:** each PDF is measured with Anthropic's free token-count endpoint, and the page shows an estimated range per file and for the whole run. The range covers what can't be known in advance: how much Claude writes back.
+- **After a run:** actual costs, taken from the API's own usage report, are shown per file and for the run.
+- **Chat:** an estimate sits under the input box. Each reply shows what it cost, and the results header keeps a running total for the comparison, also shown in Recent comparisons.
+- **Trim PDFs first:** every page is billed. Upload only scope, fees, assumptions and exclusions, and leave out resumes, firm history and project sheets. To make a trimmed PDF, print the needed pages to PDF (choose "Pages" in the print dialog) or use Acrobat's Organize Pages. The page shows the same tip under the upload box.
+- **No paying twice:** each PDF's reading is saved in the browser under a fingerprint of the file. Adding the same PDF again (for example re-running with one more proposal) reuses it at no cost, and "Re-read" forces a fresh, paid reading. Chat corrections update the saved reading.
+- Chat runs at medium effort (reading and comparing use high), which keeps questions cheaper and faster.
+- Typical figures for four ~10-page proposals: about $1–$2.50 per run, a few cents to about $0.20 per follow-up question, and more for the first question or a correction.
 
 ## Data handling (SOC 2 notes)
 

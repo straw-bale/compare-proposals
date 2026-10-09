@@ -1,3 +1,4 @@
+import { checkAccess } from "../lib/auth.js";
 import { chat, ComparisonSchema, errorResponse, ProposalSchema, UserFacingError } from "../lib/claude.js";
 import { z } from "zod";
 
@@ -15,6 +16,7 @@ const Body = z.object({
 
 export async function POST(request: Request): Promise<Response> {
   try {
+    checkAccess(request);
     const parsed = Body.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new UserFacingError("Invalid chat request.");
     const { proposals, comparison, projectName, turns } = parsed.data;
