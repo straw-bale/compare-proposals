@@ -135,6 +135,8 @@ Rules:
 - proposal_date: the date on the proposal as YYYY-MM-DD, or null if none is given.
 - fee_structure: one plain sentence describing how the fee is structured (e.g. "Fixed fee for Programming/SD; DD through Closeout as % of construction, by budget range").
 - Note in extraction_notes any internal inconsistencies you can see directly in the document (e.g. a line labeled with the wrong scenario, a subtotal that visibly doesn't match its lines), quoting the figures as written.
+- firm: the firm's short, everyday name as people would say it (e.g. "Smith Engineering", not "Smith Engineering, Inc." or "Smith Engineering, P.C. (legal entity)"). No legal suffixes, entity descriptions, or parentheticals.
+- All text fields: Write in plain, everyday professional language. Leave out legal and contractual boilerplate (e.g. "legal entity", "herein", "pursuant to", "the Consultant shall") and mention contract terms only when they matter to the decision.
 - disciplines: the services this proposal covers, in plain words (e.g. "Audio-visual design", "Architectural acoustics", "Mechanical").
 - scope_items should be granular and comparable: one item per distinct service or task in the proposal's own discipline terms (e.g. for MEP "Load calculations"; for AV "AV system design narrative", "Equipment specifications"; for acoustics "Background noise survey", "Sound isolation recommendations"; across disciplines "Site visits during construction (4)", "Record drawings"). Use short category names that fit the discipline, plus common ones such as Survey & Existing Conditions, Design, Documentation & Specifications, Coordination & Meetings, Bidding, Construction Administration, Testing & Commissioning, Deliverables, General.
 - Mark items the proposal explicitly excludes as "excluded" and items offered as add-ons or alternates as "optional". Include the page number where each item appears; use 0 when you can't tell. Use 0 for fee_items.page the same way.
@@ -162,7 +164,7 @@ Then write a briefing as if you were walking a project-architect colleague throu
 - Fee accuracy is critical. Quote only figures exactly as stated in the extractions, and say which scenario/portion each one belongs to. Never add, subtract, convert (e.g. percentage to dollars), extrapolate, or combine figures into a total or difference, and never present anything as a "comparable" or "normalized" total. If firms price on different bases (fixed dollars vs. % of construction) or different scenarios, say so plainly and compare only like-for-like stated figures; otherwise turn it into a question for the firm. Never write something that then has to be qualified as unusable. Leave it out instead.
 - flags: the 3-8 things your colleague must know, most important first. Look specifically for inconsistencies and red flags: mislabeled or internally inconsistent fee lines noted in extraction_notes, fees stated only as percentages where others gave dollars, ambiguous fee wording, scope listed as included but contradicted by an exclusion, missing basics a firm is silent on (judged for its discipline), uncapped or vague reimbursables, thin construction-phase involvement (few site visits), delegated design, mismatched project names or dates, and anything unusual in terms. level: high = could change the decision or cost real money; medium = needs clarification; low = worth noting. Keep detail to one or two sentences. Don't repeat the same point as both a flag and the overview.
 - questions: for each firm with open issues, the specific clarification questions you'd send them (max 4 each, phrased ready to paste into an email).
-- In all prose, refer to firms by their firm name, never by firm_index.`;
+- In all prose, refer to firms by their short firm name, never by firm_index. Write in plain, everyday professional language. Leave out legal and contractual boilerplate (e.g. "legal entity", "herein", "pursuant to", "the Consultant shall") and mention contract terms only when they matter to the decision.`;
 
 const CHAT_SYSTEM = `You are the senior architect who prepared this proposal review, now answering a project-architect colleague's follow-up questions. You have the original proposal PDFs, the data extracted from each one (identified by firm_index), and the current analysis (briefing, fee_rows, scope categories).
 
@@ -175,7 +177,7 @@ Corrections:
 - If a requested correction contradicts the PDF, don't apply it; say what the document says, with the page, and ask them to confirm. If they confirm or give information from outside the documents (e.g. a phone call with the firm), apply it and mention the source in the relevant note or extraction_notes.
 - All analysis rules still apply: fee_rows reference fee_items by id, notes contain no figures, and the briefing follows the same accuracy rules.
 - In reply, say plainly what you changed. Leave updated_comparison_json as an empty string and updated_proposals empty when nothing changes.
-- Refer to firms by name, never by firm_index.`;
+- Refer to firms by their short name, never by firm_index. Write in plain, everyday professional language. Leave out legal and contractual boilerplate (e.g. "legal entity", "herein", "pursuant to", "the Consultant shall") and mention contract terms only when they matter to the decision.`;
 
 // ---------- Calls ----------
 

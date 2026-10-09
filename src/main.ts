@@ -10,7 +10,7 @@ import {
   type ChatMessage,
   type SavedComparison,
 } from "./store";
-import { briefingHtml, esc, feeTable, notesHtml, scopeTable, type Sourced } from "./table";
+import { briefingHtml, esc, feeTable, firmName, notesHtml, scopeTable, type Sourced } from "./table";
 
 // Vercel rejects request bodies over 4.5 MB; locally there's no limit.
 const MAX_BYTES = import.meta.env.PROD ? 4.4 * 1024 * 1024 : Infinity;
@@ -158,7 +158,7 @@ function render() {
   filesEl.innerHTML = entries
     .map(
       (e) => `<li>
-        <span class="name">${esc(e.file.name)} ${e.result ? `<span class="firm">— ${esc(e.result.firm)}</span>` : ""}</span>
+        <span class="name">${esc(e.file.name)} ${e.result ? `<span class="firm">— ${esc(firmName(e.result.firm))}</span>` : ""}</span>
         <span class="state ${e.state}">${stateLabel(e)}</span>
         <span>${
           busy
@@ -416,9 +416,25 @@ chatForm.addEventListener("submit", async (e) => {
   chatInput.value = "";
   addMessage("user", text);
   const turns = [...c.messages, { role: "user" as const, text }].map((msg) => ({ role: msg.role, content: msg.text }));
+  // Visible placeholder reply so it's obvious the question is being worked on.
+  const pending = document.createElement("div");
+  pending.className = "msg assistant pending";
+  chatLog.appendChild(pending);
   const started = Date.now();
-  const tick = setInterval(() => (chatStatus.textContent = `Thinking… ${Math.round((Date.now() - started) / 1000)}s`), 1000);
-  chatStatus.textContent = "Thinking…";
+  const showProgress = () => {
+    const secs = Math.round((Date.now() - started) / 1000);
+    const why =
+      secs < 15
+        ? "Checking the proposals"
+        : secs < 45
+          ? "Still working: re-reading the PDFs takes a little longer on the first question"
+          : "Still working: corrections and detailed checks can take a minute or two";
+    pending.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${why}… <span class="secs">${secs}s</span>`;
+    chatLog.scrollTop = chatLog.scrollHeight;
+  };
+  showProgress();
+  const tick = setInterval(showProgress, 1000);
+  chatInput.disabled = true;
   try {
     const res = await post<ChatResponse & { usage: Usage }>(
       "/api/chat",
@@ -460,9 +476,12 @@ chatForm.addEventListener("submit", async (e) => {
     }
   } finally {
     clearInterval(tick);
+    pending.remove();
     chatStatus.textContent = "";
     chatting = false;
     chatSend.disabled = false;
+    chatInput.disabled = false;
+    chatInput.focus();
   }
 });
 
@@ -513,7 +532,7 @@ async function renderSaved() {
   savedEl.hidden = all.length === 0;
   savedList.innerHTML = all
     .map((s) => {
-      const firms = s.proposals.map((p) => p.firm).join(", ");
+      const firms = s.proposals.map((p) => firmName(p.firm)).join(", ");
       const when = new Date(s.savedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
       return `<li class="${s.id === current?.id ? "active" : ""}">
         <button class="link open" data-open="${s.id}"><b>${esc(s.projectName ?? "Untitled")}</b> <span>${esc(firms)}</span></button>

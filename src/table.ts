@@ -4,6 +4,17 @@ type FeeItem = Proposal["fee_items"][number];
 /** A proposal plus the uploaded file it came from and its Anthropic file id (both added client-side). */
 export type Sourced = Proposal & { source_file?: string; file_id?: string; pdf_tokens?: number; source_hash?: string };
 
+/**
+ * Display name for a firm: drops legal suffixes (Inc., LLC, P.C., ...) and entity parentheticals such as
+ * "(legal entity)". Also covers readings saved before the extraction prompt asked for short names.
+ */
+export function firmName(name: string): string {
+  let n = name.replace(/\s*\((?:[^)]*\b(?:legal|entity|d\/b\/a|dba|formerly)\b[^)]*)\)/gi, "").trim();
+  const suffix = /,?\s+(?:inc|incorporated|llc|l\.l\.c|pllc|p\.?\s?c|ltd|limited|llp|l\.l\.p|corp|corporation)\.?$/i;
+  while (suffix.test(n)) n = n.replace(suffix, "").trim();
+  return n.replace(/,$/, "") || name;
+}
+
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -35,7 +46,7 @@ const source = (p: Sourced) => (p.source_file ? `<small class="src">${esc(p.sour
 
 function head(proposals: Sourced[]) {
   return `<colgroup><col class="rowhead">${proposals.map(() => "<col>").join("")}</colgroup><thead><tr><th></th>${proposals
-    .map((p) => `<th>${esc(p.firm)}${p.proposal_date ? `<small>${esc(fmtDate(p.proposal_date))}</small>` : ""}${source(p)}</th>`)
+    .map((p) => `<th>${esc(firmName(p.firm))}${p.proposal_date ? `<small>${esc(fmtDate(p.proposal_date))}</small>` : ""}${source(p)}</th>`)
     .join("")}</tr></thead>`;
 }
 
@@ -210,7 +221,7 @@ export function notesHtml(proposals: Sourced[]): string {
   return proposals
     .map((p) => {
       const sec = (title: string, items: string[]) => (items.length ? `<h4>${title}</h4>${list(items)}` : "");
-      return `<div><h3>${esc(p.firm)}${source(p)}</h3>${sec("Exclusions", p.exclusions)}${sec(
+      return `<div><h3>${esc(firmName(p.firm))}${source(p)}</h3>${sec("Exclusions", p.exclusions)}${sec(
         "Assumptions",
         p.assumptions,
       )}${sec("Clarifications", p.clarifications)}${sec("Deliverables", p.deliverables)}${sec(
@@ -225,7 +236,12 @@ const LEVEL = { high: "Act", medium: "Clarify", low: "Note" } as const;
 
 export function briefingHtml(proposals: Proposal[], cmp: Comparison): string {
   const b = cmp.briefing;
-  const names = (ix: number[]) => ix.map((i) => proposals[i]?.firm).filter(Boolean).join(", ");
+  const names = (ix: number[]) =>
+    ix
+      .map((i) => proposals[i]?.firm)
+      .filter((f): f is string => !!f)
+      .map(firmName)
+      .join(", ");
   const flags = b.flags
     .map(
       (f) => `<li class="lv-${f.level}"><span class="lv">${LEVEL[f.level]}</span><div><b>${esc(f.title)}</b>${
@@ -235,7 +251,7 @@ export function briefingHtml(proposals: Proposal[], cmp: Comparison): string {
     .join("");
   const questions = b.questions
     .filter((q) => q.items.length && proposals[q.firm_index])
-    .map((q) => `<div><h4>${esc(proposals[q.firm_index].firm)}</h4>${list(q.items)}</div>`)
+    .map((q) => `<div><h4>${esc(firmName(proposals[q.firm_index].firm))}</h4>${list(q.items)}</div>`)
     .join("");
   return `<p class="headline">${esc(b.headline)}</p>
     <p class="overview">${esc(b.overview)}</p>
