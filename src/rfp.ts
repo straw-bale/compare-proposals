@@ -140,6 +140,9 @@ async function renderSaved() {
     .join("");
 }
 
+/** The review on screen, if any. */
+export const getCurrentRfp = () => current;
+
 /** Opens a saved review by id (from the list or a shared link). */
 export async function openRfp(id: string) {
   const found = (await listRfps()).find((s) => s.id === id);
@@ -257,7 +260,8 @@ function showResults() {
         )}
       </div>
     </div>
-    <p class="estimate">${esc(current.files.join(", "))}${current.costUsd != null ? ` · ${usd(current.costUsd)}` : ""}</p>`;
+    <p class="estimate">${esc(current.files.join(", "))}${current.costUsd != null ? ` · ${usd(current.costUsd)}` : ""}</p>
+    <p class="print-note">AI can make mistakes, so check important details against the original documents.</p>`;
 
   $("rfp-intake").hidden = true;
   $("rfp-results").hidden = false;

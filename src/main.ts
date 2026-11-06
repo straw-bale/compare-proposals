@@ -1,3 +1,4 @@
+import "@fontsource-variable/inter";
 import type { ChatResponse, Comparison, Proposal } from "../lib/claude";
 import { estimateChat, estimateCompare, estimateExtract, sumRanges, usd, usdRange, type Usage } from "../lib/cost";
 import {
@@ -13,7 +14,8 @@ import {
 } from "./store";
 import { accessCode, post, setUnauthorizedHandler } from "./api";
 import { confirmDelete, noticeModal } from "./modal";
-import { initRfp, openRfp } from "./rfp";
+import { getCurrentRfp, initRfp, openRfp } from "./rfp";
+import { setPrintName } from "./print";
 import { copyShareLink, parseHash } from "./share";
 import { briefingHtml, esc, feeTable, firmName, notesHtml, scopeTable, type Sourced } from "./table";
 
@@ -629,6 +631,19 @@ codeAccepted(accessCode()).then(
   },
   () => (gateError.textContent = "Can't reach the server. Refresh to try again."),
 );
+
+// Default PDF name: the open RFP review or comparison on the visible tab.
+setPrintName(() => {
+  const tab = parseHash().tab || "rfp";
+  if (tab === "rfp") {
+    const r = getCurrentRfp();
+    return r && { kind: "RFP Review", name: r.project || r.rfp.project_name };
+  }
+  if (tab === "proposals" && current && !results.hidden) {
+    return { kind: "Proposal Comparison", name: current.projectName || current.proposals.map((p) => firmName(p.firm)).join(" ") };
+  }
+  return null;
+});
 
 let started = false;
 function start() {

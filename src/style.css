@@ -7,8 +7,9 @@
   --good: #111;
   --bad: #b3261e;
   --blue: #2f5bd3;
-  --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* One typeface everywhere (bundled with the app, so it's identical on every computer and on paper). */
+  --sans: "Inter Variable", "Helvetica Neue", Arial, sans-serif;
+  --mono: var(--sans);
 }
 
 * { box-sizing: border-box; }
@@ -18,6 +19,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font: 15px/1.5 var(--sans);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Footer sits at the bottom of short pages too */
@@ -231,6 +233,7 @@ body.chat-open main, body.chat-open footer.site { margin-right: 420px; }
 }
 
 .print-head { display: none; }
+.print-note { display: none; }
 
 @media (max-width: 640px) {
   header.site, main, footer.site { padding-left: 16px; padding-right: 16px; }
@@ -306,6 +309,8 @@ mark { padding: 0 3px; }
 /* Print / PDF */
 @page { margin: 12mm; }
 @media print {
+  /* Printed RFP reviews end with this reminder, in a box so it isn't missed. */
+  .print-note { display: block; margin-top: 24px; padding: 10px; border: 1.5pt solid #000; font-weight: 700; font-size: 12px; break-inside: avoid; }
   header.site, footer.site, .feedback, .q-remove, #intake, #rfp-intake, .rfp-top, .toolbar, .chat, input.project { display: none !important; }
   body.chat-open main, body.chat-open footer.site { margin-right: 0; }
   main { padding: 0; max-width: none; }
