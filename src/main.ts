@@ -578,8 +578,6 @@ savedList.addEventListener("click", async (e) => {
   }
 });
 
-renderSaved();
-
 // ---------- Access code (live site only; the server decides whether one is required) ----------
 
 const gate = $<HTMLDivElement>("gate");
@@ -607,15 +605,30 @@ gateForm.addEventListener("submit", async (e) => {
       localStorage.setItem("access-code", code);
     } catch {}
     gate.hidden = true;
+    start();
   } else {
     gateError.textContent = "That code isn't right.";
     gateInput.select();
   }
 });
 
-codeAccepted(accessCode()).then((ok) => {
-  if (!ok) showGate();
-});
+// The gate is shown from the first paint; nothing loads until the code checks out (or none is required).
+codeAccepted(accessCode()).then(
+  (ok) => {
+    if (!ok) return showGate();
+    gate.hidden = true;
+    start();
+  },
+  () => (gateError.textContent = "Can't reach the server. Refresh to try again."),
+);
+
+let started = false;
+function start() {
+  if (started) return;
+  started = true;
+  renderSaved();
+  initRfp();
+}
 
 // ---------- Tabs ----------
 
@@ -673,5 +686,4 @@ feedbackForm.addEventListener("submit", async (e) => {
   }
 });
 
-initRfp();
 render();
