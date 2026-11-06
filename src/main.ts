@@ -13,7 +13,8 @@ import {
 } from "./store";
 import { accessCode, post, setUnauthorizedHandler } from "./api";
 import { confirmDelete, noticeModal } from "./modal";
-import { initRfp } from "./rfp";
+import { initRfp, openRfp } from "./rfp";
+import { copyShareLink, parseHash } from "./share";
 import { briefingHtml, esc, feeTable, firmName, notesHtml, scopeTable, type Sourced } from "./table";
 
 // Vercel rejects request bodies over 4.5 MB; locally there's no limit.
@@ -137,6 +138,7 @@ clearBtn.addEventListener("click", () => {
   entries = [];
   results.hidden = true;
   current = null;
+  history.replaceState(null, "", "#proposals");
   resetChat();
   setChatOpen(false);
   renderSaved();
@@ -321,6 +323,7 @@ const scopeEl = $<HTMLTableElement>("scope");
 const diffOnly = $<HTMLInputElement>("diff-only");
 diffOnly.addEventListener("change", () => scopeEl.classList.toggle("diff-only", diffOnly.checked));
 $("print").addEventListener("click", () => window.print());
+$("share").addEventListener("click", (e) => current && copyShareLink("proposals", current.id, e.currentTarget as HTMLElement));
 
 // The analysis currently on screen (saved in this browser); chat corrections replace parts of it.
 let current: SavedComparison | null = null;
@@ -543,12 +546,22 @@ async function renderSaved() {
       const firms = s.proposals.map((p) => firmName(p.firm)).join(", ");
       const when = new Date(s.savedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
       return `<li class="${s.id === current?.id ? "active" : ""}">
-        <button class="link open" data-open="${s.id}"><b>${esc(s.projectName ?? firms)}</b> <span>${s.projectName ? esc(firms) : ""}</span></button>
+        <button class="link open" data-open="${esc(s.id)}"><b>${esc(s.projectName ?? firms)}</b> <span>${s.projectName ? esc(firms) : ""}</span></button>
         <span class="when">${s.costUsd != null ? usd(s.costUsd) + " · " : ""}${esc(when)}</span>
-        <button class="link" data-delete="${s.id}">Delete</button>
+        <button class="link" data-delete="${esc(s.id)}">Delete</button>
       </li>`;
     })
     .join("");
+}
+
+/** Opens a saved comparison by id (from the list or a shared link). */
+async function openComparison(id: string) {
+  const saved = (await listComparisons()).find((s) => s.id === id);
+  if (!saved) return noticeModal("Comparison not found", "It may have been deleted.");
+  current = saved;
+  resetChat();
+  showResults(true);
+  await renderSaved();
 }
 
 savedList.addEventListener("click", async (e) => {
@@ -556,12 +569,7 @@ savedList.addEventListener("click", async (e) => {
   const openId = target.closest("[data-open]")?.getAttribute("data-open");
   const deleteId = target.closest("[data-delete]")?.getAttribute("data-delete");
   if (openId && !busy && !chatting) {
-    const saved = (await listComparisons()).find((s) => s.id === openId);
-    if (!saved) return;
-    current = saved;
-    resetChat();
-    showResults(true);
-    await renderSaved();
+    await openComparison(openId);
   } else if (deleteId && (await confirmDelete("comparison"))) {
     try {
       await deleteComparison(deleteId);
@@ -628,6 +636,7 @@ function start() {
   started = true;
   renderSaved();
   initRfp();
+  showTab();
 }
 
 // ---------- Tabs ----------
@@ -636,10 +645,13 @@ const TABS = ["rfp", "proposals", "fee"];
 // The wireframe is local-only (not committed), so only link to it in dev.
 if (import.meta.env.PROD) $("wireframe-link").remove();
 function showTab() {
-  const tab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "rfp";
+  const { tab: t, id } = parseHash();
+  const tab = TABS.includes(t) ? t : "rfp";
   for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
   document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === tab));
   if (tab !== "proposals") setChatOpen(false);
+  // A shared link (#rfp/<id> or #proposals/<id>) opens that item once the access code has been accepted.
+  if (id && started) tab === "rfp" ? openRfp(id) : tab === "proposals" && openComparison(id);
 }
 addEventListener("hashchange", showTab);
 showTab();

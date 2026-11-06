@@ -1,8 +1,9 @@
-import type { Rfp } from "../lib/claude";
+import { RFP_FACTS, type Rfp, type RfpFactKey } from "../lib/claude";
 import { estimateRfp, usd, usdRange, type Usage } from "../lib/cost";
 import { post, postPdf } from "./api";
-import { deleteRfp, fillProjectNames, listRfps, saveRfp, type SavedRfp } from "./store";
-import { confirmDelete, noticeModal } from "./modal";
+import { deleteRfp, fillProjectNames, listRfps, saveRfp, savesShared, type SavedRfp } from "./store";
+import { confirmDelete, confirmModal, noticeModal } from "./modal";
+import { copyShareLink } from "./share";
 import { esc } from "./table";
 
 // Vercel rejects request bodies over 4.5 MB; locally there's no limit.
@@ -131,12 +132,20 @@ async function renderSaved() {
     .map((s) => {
       const due = proposalDue(s.rfp);
       return `<li>
-        <button class="link open" data-open="${s.id}"><b>${esc(s.project ?? s.rfp.project_name)}</b> <span>${esc(s.rfp.client)}</span></button>
+        <button class="link open" data-open="${esc(s.id)}"><b>${esc(s.project ?? s.rfp.project_name)}</b> <span>${esc(s.rfp.client)}</span></button>
         <span class="when">${due ? `Due ${esc(formatWhen(due))}` : ""}</span>
-        <button class="link" data-delete="${s.id}">Delete</button>
+        <button class="link" data-delete="${esc(s.id)}">Delete</button>
       </li>`;
     })
     .join("");
+}
+
+/** Opens a saved review by id (from the list or a shared link). */
+export async function openRfp(id: string) {
+  const found = (await listRfps()).find((s) => s.id === id);
+  if (!found) return noticeModal("Review not found", "It may have been deleted.");
+  current = found;
+  showResults();
 }
 
 async function onSavedClick(e: Event) {
@@ -144,8 +153,7 @@ async function onSavedClick(e: Event) {
   const openId = t.closest("[data-open]")?.getAttribute("data-open");
   const deleteId = t.closest("[data-delete]")?.getAttribute("data-delete");
   if (openId && !busy) {
-    current = (await listRfps()).find((s) => s.id === openId) ?? null;
-    showResults();
+    await openRfp(openId);
   } else if (deleteId && (await confirmDelete("RFP review"))) {
     try {
       await deleteRfp(deleteId);
@@ -188,7 +196,7 @@ function proposalDue(rfp: Rfp) {
   return rfp.dates.find((d) => /proposal|submission|submittal|response|qualifications/i.test(d.label) && /due|deadline|submi/i.test(d.label));
 }
 
-const pg = (n: number) => (n > 0 ? ` <span class="pg">p. ${n}</span>` : "");
+const pg = (n: number) => (Number(n) > 0 ? ` <span class="pg">p. ${Math.trunc(Number(n))}</span>` : "");
 
 function showResults() {
   if (!current) return;
@@ -197,7 +205,7 @@ function showResults() {
 
   const dates = rfp.dates
     .map((d) => {
-      return `<tr>
+      return `<tr class="${d === due ? "due" : ""}">
         <td class="when">${esc(formatWhen(d))}</td>
         <td>${esc(d.label)}${d.mandatory ? ' <span class="must">Mandatory</span>' : ""}</td>
       </tr>`;
@@ -208,11 +216,11 @@ function showResults() {
     <div class="rfp-top">
       <button class="link" data-back>← All RFPs</button>
       <input class="project" data-project list="project-names" placeholder="Add to project" autocomplete="off" value="${esc(current.project ?? "")}" />
-      <span class="tools"><button class="btn" data-print>Print</button></span>
+      <span class="tools"><button class="btn" data-share>Share</button><button class="btn" data-print>Print</button></span>
     </div>
     <h1 class="headline">${esc(rfp.project_name)}</h1>
     <p class="rfp-sub">${esc(rfp.client)}${
-      due ? ` · Due ${esc(formatWhen(due))}` : ""
+      due ? ` · <mark>Due ${esc(formatWhen(due))}</mark>` : ""
     }</p>
     <p class="overview">${esc(rfp.summary)}</p>
 
@@ -225,18 +233,22 @@ function showResults() {
             .map((w) => `<li class="${w.critical ? "critical" : ""}"><b>${esc(w.title)}</b>${pg(w.page)}<p>${esc(w.detail)}</p></li>`)
             .join("")}</ul>`,
           rfp.watch_outs.length,
+          "None found.",
         )}
         ${section(
           `Questions to ask <button class="link" data-copy>Copy</button>`,
-          `<ol class="qs">${rfp.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ol>`,
+          `<ol class="qs">${rfp.questions
+            .map((q, i) => `<li><button class="q-remove" data-remove-q="${i}" title="Remove this question" aria-label="Remove this question">×</button><span>${i + 1}. ${esc(q)}</span></li>`)
+            .join("")}</ol>`,
           rfp.questions.length,
+          "None.",
         )}
       </div>
       <div>
         ${section(
           "Key facts",
-          `<table class="grid facts">${rfp.facts.map((f) => `<tr><th scope="row">${esc(f.label)}</th><td>${esc(f.value)}${pg(f.page)}</td></tr>`).join("")}</table>`,
-          rfp.facts.length,
+          `<table class="grid facts">${factsRows(rfp.facts)}</table>`,
+          1,
         )}
         ${section(
           "Scoring",
@@ -252,19 +264,49 @@ function showResults() {
   scrollTo(0, 0);
 }
 
-/** A titled block, left out entirely when it has nothing in it. */
-const section = (title: string, body: string, count: number) =>
-  count ? `<div class="block"><h2 class="label">${title}</h2>${body}</div>` : "";
+/** A titled block. Every review shows the same blocks in the same order; an empty one says so. */
+const section = (title: string, body: string, count: number, empty = "Not stated in the RFP.") =>
+  `<div class="block"><h2 class="label">${title}</h2>${count ? body : `<p class="none">${empty}</p>`}</div>`;
+
+/** Key facts in a fixed order. Reviews saved before the fixed list keep their own label/value pairs. */
+function factsRows(facts: Rfp["facts"] | { label: string; value: string; page: number }[]): string {
+  const rows = Array.isArray(facts)
+    ? facts.map((f) => [f.label, f.value, f.page] as const)
+    : (Object.keys(RFP_FACTS) as RfpFactKey[]).map((k) => [RFP_FACTS[k], facts[k]?.value ?? "", facts[k]?.page ?? 0] as const);
+  return rows
+    .map(([label, value, page]) => `<tr><th scope="row">${esc(label)}</th><td>${value ? esc(value) + pg(page) : "Not stated"}</td></tr>`)
+    .join("");
+}
 
 async function onResultsClick(e: Event) {
   const t = e.target as HTMLElement;
   if (t.closest("[data-back]")) {
     current = null;
+    history.replaceState(null, "", "#rfp");
     $("rfp-results").hidden = true;
     $("rfp-intake").hidden = false;
     renderSaved();
   } else if (t.closest("[data-print]")) {
     print();
+  } else if (t.closest("[data-share]") && current) {
+    await copyShareLink("rfp", current.id, t.closest("[data-share]") as HTMLElement);
+  } else if (t.closest("[data-remove-q]") && current) {
+    // Answered or not useful: drop it from the saved review, after a warning that it can't come back.
+    const i = Number(t.closest("[data-remove-q]")!.getAttribute("data-remove-q"));
+    const ok = await confirmModal({
+      title: "Remove this question?",
+      body: savesShared()
+        ? "It will be permanently removed from this review for everyone. This can't be undone."
+        : "It will be permanently removed from this review. This can't be undone.",
+      confirm: "Remove",
+      danger: true,
+    });
+    if (!ok || !current) return;
+    current.rfp.questions.splice(i, 1);
+    const y = scrollY;
+    showResults();
+    scrollTo(0, y);
+    await saveRfp(current).catch((err) => noticeModal("Not saved", (err as Error).message));
   } else if (t.closest("[data-copy]") && current) {
     await navigator.clipboard.writeText(current.rfp.questions.map((q, i) => `${i + 1}. ${q}`).join("\n"));
     t.textContent = "Copied";

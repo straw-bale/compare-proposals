@@ -279,6 +279,10 @@ input.project::placeholder { color: #aaa; }
 .rfp-sub { color: var(--muted); margin: 0 0 16px; }
 .rfp-cols { display: grid; grid-template-columns: 3fr 2fr; gap: 56px; }
 .pg { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: 4px; white-space: nowrap; }
+mark, .dates tr.due td { background: #ffff00; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+mark { padding: 0 3px; }
+.none { margin: 0; font-size: 14px; }
+.dates td { padding-left: 10px; }
 .dates .when { width: 34%; font-variant-numeric: tabular-nums; }
 .must { color: var(--bad); font-size: 12px; margin-left: 6px; }
 .watch { list-style: none; padding: 0; margin: 0; font-size: 14px; }
@@ -286,8 +290,14 @@ input.project::placeholder { color: #aaa; }
 .watch li.critical::before { content: ""; position: absolute; left: 0; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
 .watch b { font-weight: 500; }
 .watch p { margin: 2px 0 0; color: var(--ink); }
-.qs { margin: 0; padding-left: 18px; font-size: 14px; }
-.qs li { margin-bottom: 6px; }
+.qs { margin: 0; padding: 0; list-style: none; font-size: 14px; line-height: 21px; }
+.qs li { margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; }
+.q-remove {
+  /* Same height as one line of text, so the × sits on the middle of the question's first line. */
+  flex: none; display: flex; align-items: center; justify-content: center; width: 21px; height: 21px;
+  border: 1px solid var(--ink); background: var(--bg); padding: 0; font: 700 15px/1 var(--sans); color: var(--ink); cursor: pointer;
+}
+.q-remove:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
 .label .link { margin-left: 8px; font-size: 13px; font-weight: 400; }
 .facts th[scope="row"] { width: 45%; }
 .facts td.num { text-align: right; padding-right: 0; }
@@ -296,7 +306,7 @@ input.project::placeholder { color: #aaa; }
 /* Print / PDF */
 @page { margin: 12mm; }
 @media print {
-  header.site, footer.site, .feedback, #intake, #rfp-intake, .rfp-top, .toolbar, .chat, input.project { display: none !important; }
+  header.site, footer.site, .feedback, .q-remove, #intake, #rfp-intake, .rfp-top, .toolbar, .chat, input.project { display: none !important; }
   body.chat-open main, body.chat-open footer.site { margin-right: 0; }
   main { padding: 0; max-width: none; }
   #results { border: 0; margin: 0; padding: 0; }

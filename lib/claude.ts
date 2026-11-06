@@ -109,12 +109,34 @@ export const ComparisonSchema = z.object({
 });
 export type Comparison = z.infer<typeof ComparisonSchema>;
 
+export const RFP_FACTS = {
+  location: "Location",
+  building_size: "Building size",
+  construction_budget: "Construction budget",
+  delivery_method: "Delivery method",
+  services: "Services requested",
+  fee_format: "Fee format",
+  contract: "Contract",
+  insurance: "Insurance",
+  page_limit: "Page limit",
+  submission: "Submission format",
+  contact: "Contact",
+} as const;
+export type RfpFactKey = keyof typeof RFP_FACTS;
+
 // An RFP (plus any addenda) read for an architecture firm deciding whether and how to respond.
 export const RfpSchema = z.object({
   project_name: z.string(),
   client: z.string(),
   summary: z.string(),
-  facts: z.array(z.object({ label: z.string(), value: z.string(), page: z.number() })),
+  // A fixed set so every review reads the same; value "" when the RFP doesn't say.
+  facts: z.object(
+    Object.fromEntries(
+      ["location", "building_size", "construction_budget", "delivery_method", "services", "fee_format", "contract", "insurance", "page_limit", "submission", "contact"].map(
+        (k) => [k, z.object({ value: z.string(), page: z.number() })],
+      ),
+    ) as Record<RfpFactKey, z.ZodObject<{ value: z.ZodString; page: z.ZodNumber }>>,
+  ),
   dates: z.array(
     z.object({
       label: z.string(),
@@ -206,10 +228,10 @@ Be brief. The reader should take it in within two minutes. Include only what aff
 
 - project_name, client: short everyday names.
 - summary: 2-3 plain sentences: what is being procured, the scope, and the single biggest consideration.
-- facts: at most 8 short label/value pairs a principal would want first, only when stated: construction budget, building size, delivery method, services requested, fee format, contract form, insurance, page limit, submission format. Values short (a few words).
+- facts: fill every field from the RFP, a few words each; value "" when the RFP doesn't say. location (city/site), building_size (area, floors), construction_budget, delivery_method, services (what the design team is asked to provide), fee_format (how fees must be submitted), contract (form or type of agreement), insurance (required coverage), page_limit, submission (format, copies, where to send), contact (procurement contact name and email).
 - dates: every procurement date (issued, site visit, pre-proposal meeting, questions due, addenda, proposal due, interviews, award) and key project milestones (design start, construction start/finish). date is YYYY-MM-DD when a specific day is given, otherwise "". when is short and in one consistent format: "Jul 12, 2023, 9:30 AM" for a specific day (time only if stated), "Sep 2023" for a month, otherwise a few plain words (e.g. "Spring 2028", "After interviews, TBD"). mandatory is true only when attendance or the deadline is stated as mandatory or disqualifying. Order chronologically.
 - watch_outs: at most 8, most important first. Look for disqualifiers, onerous contract terms (indemnity, duty to defend, liability, IP, payment terms, fee caps), internal inconsistencies (quote both versions with pages), unusually heavy or vague scope (many meetings, long CA, unclear consultant responsibilities), fee constraints, and unrealistic schedules. critical is true only for things that could disqualify the proposal or cost real money. detail is one sentence.
-- questions: at most 6 clarification questions to submit to the client, phrased ready to paste.
+- Always fill every section the same way: dates, watch_outs, questions and scoring are empty lists only when the RFP truly has nothing for them.\n- questions: at most 6 clarification questions to submit to the client, phrased ready to paste.
 - scoring: evaluation criteria with their weights or points as written (weight "" if not given).
 - page: the page number where it appears; 0 if unknown.
 - Plain, everyday professional language. No legal boilerplate. Never invent details that aren't in the documents.`;

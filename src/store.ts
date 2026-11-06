@@ -1,6 +1,7 @@
 import type { Comparison, Proposal, Rfp } from "../lib/claude";
 import type { Sourced } from "./table";
 import { accessCode } from "./api";
+import { esc } from "./table";
 
 
 export type ChatMessage = { role: "user" | "assistant"; text: string; updated?: boolean; cost?: number | null };
@@ -161,5 +162,5 @@ export async function fillProjectNames(suggest?: string) {
   const names = await listProjectNames();
   if (suggest && !names.includes(suggest)) names.unshift(suggest);
   const list = document.getElementById("project-names");
-  if (list) list.innerHTML = names.map((n) => `<option value="${n.replace(/"/g, "&quot;")}"></option>`).join("");
+  if (list) list.innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
 }

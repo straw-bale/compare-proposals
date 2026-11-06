@@ -11,7 +11,7 @@ function params(request: Request): { table: Table; key: string | null } {
   if (!dbConfigured()) throw new UserFacingError("Database not configured.", 503);
   const url = new URL(request.url);
   const table = url.searchParams.get("table") as Table;
-  if (!(table in TABLES)) throw new UserFacingError("Unknown table.");
+  if (!Object.hasOwn(TABLES, table)) throw new UserFacingError("Unknown table.");
   return { table, key: url.searchParams.get("key") };
 }
 

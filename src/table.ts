@@ -18,8 +18,9 @@ export function firmName(name: string): string {
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
+// Saved records come back from the database, so numbers are coerced before display (never trusted as HTML).
 const money = (n: number | null | undefined) =>
-  n == null ? "—" : n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  n == null || !Number.isFinite(Number(n)) ? "—" : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 const list = (items: string[]) => (items.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : "—");
 
@@ -53,7 +54,7 @@ function head(proposals: Sourced[]) {
 /** Renders a fee line exactly as stated: dollars, or a percentage of construction. Nothing is computed. */
 function feeValue(f: FeeItem): string {
   if (f.amount != null) return money(f.amount);
-  if (f.percent != null) return `${f.percent}%${f.basis === "percent_of_construction" ? " of construction" : ""}`;
+  if (f.percent != null) return `${esc(f.percent)}%${f.basis === "percent_of_construction" ? " of construction" : ""}`;
   return "Not stated";
 }
 
@@ -138,7 +139,7 @@ export function feeTable(proposals: Sourced[], cmp: Comparison): string {
             const lines = items
               .map((f) => {
                 const tag = BASIS[f.basis];
-                const sub = [items.length > 1 || f.label !== r.label ? f.label : "", tag, f.page ? `p. ${f.page}` : ""]
+                const sub = [items.length > 1 || f.label !== r.label ? f.label : "", tag, f.page ? `p. ${Number(f.page)}` : ""]
                   .filter(Boolean)
                   .join(" · ");
                 return `<div>${feeValue(f)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</div>`;
@@ -198,7 +199,7 @@ export function scopeTable(proposals: Sourced[], cmp: Comparison): string {
           return `<tr class="${cls}"><th scope="row">${esc(it.item)}</th>${cells
             .map((c) => {
               const st = c?.status ?? "not_mentioned";
-              const title = [c?.note, c?.page ? `p. ${c.page}` : ""].filter(Boolean).join(" · ");
+              const title = [c?.note, c?.page ? `p. ${Number(c.page)}` : ""].filter(Boolean).join(" · ");
               return `<td class="st st-${st}" title="${esc(title)}">${STATUS[st]}${
                 c?.note ? `<span class="sub">${esc(c.note)}</span>` : ""
               }</td>`;
