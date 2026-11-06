@@ -29,3 +29,13 @@ alter table readings enable row level security;
 
 -- Newer Supabase projects don't grant table access automatically; let the server's secret key (service_role) in.
 grant select, insert, update, delete on rfp_reviews, comparisons, readings to service_role;
+
+-- Messages from the Feedback button.
+create table if not exists feedback (
+  id uuid primary key default gen_random_uuid(),
+  message text not null,
+  tab text,
+  created_at timestamptz not null default now()
+);
+alter table feedback enable row level security;
+grant select, insert, update, delete on feedback to service_role;

@@ -2,6 +2,7 @@ import type { Rfp } from "../lib/claude";
 import { estimateRfp, usd, usdRange, type Usage } from "../lib/cost";
 import { post, postPdf } from "./api";
 import { deleteRfp, fillProjectNames, listRfps, saveRfp, type SavedRfp } from "./store";
+import { confirmDelete, noticeModal } from "./modal";
 import { esc } from "./table";
 
 // Vercel rejects request bodies over 4.5 MB; locally there's no limit.
@@ -145,8 +146,12 @@ async function onSavedClick(e: Event) {
   if (openId && !busy) {
     current = (await listRfps()).find((s) => s.id === openId) ?? null;
     showResults();
-  } else if (deleteId && confirm("Delete this RFP review from this browser?")) {
-    await deleteRfp(deleteId);
+  } else if (deleteId && (await confirmDelete("RFP review"))) {
+    try {
+      await deleteRfp(deleteId);
+    } catch (err) {
+      await noticeModal("Couldn't delete", (err as Error).message);
+    }
     renderSaved();
   }
 }
@@ -182,10 +187,10 @@ function showResults() {
     .map((d) => {
       const day = parseDay(d.date);
       const n = day ? daysUntil(day) : null;
-      return `<tr class="${n != null && n < 0 ? "past" : ""}">
+      return `<tr>
         <td class="when">${esc(d.when)}</td>
         <td>${esc(d.label)}${d.mandatory ? ' <span class="must">Mandatory</span>' : ""}</td>
-        <td class="in">${n != null ? inDays(n) : ""}</td>
+        <td class="in">${n == null ? "" : n < 0 ? '<span class="must">Already passed?</span>' : inDays(n)}</td>
       </tr>`;
     })
     .join("");

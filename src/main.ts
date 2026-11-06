@@ -12,6 +12,7 @@ import {
   type SavedComparison,
 } from "./store";
 import { accessCode, post, setUnauthorizedHandler } from "./api";
+import { confirmDelete, noticeModal } from "./modal";
 import { initRfp } from "./rfp";
 import { briefingHtml, esc, feeTable, firmName, notesHtml, scopeTable, type Sourced } from "./table";
 
@@ -561,8 +562,13 @@ savedList.addEventListener("click", async (e) => {
     resetChat();
     showResults(true);
     await renderSaved();
-  } else if (deleteId && confirm("Delete this saved comparison from this browser?")) {
-    await deleteComparison(deleteId);
+  } else if (deleteId && (await confirmDelete("comparison"))) {
+    try {
+      await deleteComparison(deleteId);
+    } catch (err) {
+      await noticeModal("Couldn't delete", (err as Error).message);
+      return;
+    }
     if (current?.id === deleteId) {
       current = null;
       results.hidden = true;
@@ -624,6 +630,48 @@ function showTab() {
 }
 addEventListener("hashchange", showTab);
 showTab();
+
+// ---------- Feedback ----------
+
+const feedbackForm = $<HTMLFormElement>("feedback-form");
+const feedbackInput = $<HTMLTextAreaElement>("feedback-input");
+const feedbackStatus = $("feedback-status");
+function setFeedbackOpen(open: boolean) {
+  feedbackForm.hidden = !open;
+  feedbackStatus.textContent = "";
+  if (open) feedbackInput.focus();
+}
+$("feedback-toggle").addEventListener("click", () => setFeedbackOpen(feedbackForm.hidden !== false));
+$("feedback-close").addEventListener("click", () => setFeedbackOpen(false));
+feedbackForm.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setFeedbackOpen(false);
+});
+// Lift the widget above the blue footer while the footer is on screen.
+const footer = document.querySelector("footer.site") as HTMLElement;
+const liftFeedback = () => {
+  const visible = Math.max(0, innerHeight - footer.getBoundingClientRect().top);
+  document.body.style.setProperty("--footer-lift", `${visible}px`);
+};
+addEventListener("scroll", liftFeedback, { passive: true });
+addEventListener("resize", liftFeedback);
+new ResizeObserver(liftFeedback).observe(document.body);
+liftFeedback();
+feedbackForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const message = feedbackInput.value.trim();
+  if (!message) return;
+  feedbackStatus.classList.remove("error");
+  feedbackStatus.textContent = "Sending…";
+  try {
+    await post("/api/feedback", JSON.stringify({ message, tab: location.hash.slice(1) || "rfp" }), { "content-type": "application/json" });
+    feedbackInput.value = "";
+    feedbackStatus.textContent = "Thanks!";
+    setTimeout(() => setFeedbackOpen(false), 1200);
+  } catch (err) {
+    feedbackStatus.classList.add("error");
+    feedbackStatus.textContent = (err as Error).message;
+  }
+});
 
 initRfp();
 render();

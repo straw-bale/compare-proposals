@@ -71,6 +71,8 @@ async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
 type Kind = "comparisons" | "rfps" | "readings";
 const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS };
 let local = false;
+/** False once the app has fallen back to this browser's storage (Supabase not configured). */
+export const savesShared = () => !local;
 
 async function remote<T>(method: string, kind: Kind, opts: { key?: string; body?: unknown } = {}): Promise<T | undefined> {
   if (local) return undefined;

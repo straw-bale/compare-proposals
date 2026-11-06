@@ -50,3 +50,7 @@ export async function put(t: Table, record: Record<string, unknown>): Promise<vo
 export async function remove(t: Table, key: string): Promise<void> {
   await sb(`${TABLES[t]}?${keyCol(t)}=eq.${encodeURIComponent(key)}`, { method: "DELETE" });
 }
+
+export async function addFeedback(message: string, tab: string | null): Promise<void> {
+  await sb("feedback", { method: "POST", body: JSON.stringify({ message, tab }) });
+}
