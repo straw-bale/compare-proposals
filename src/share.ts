@@ -1,5 +1,5 @@
-/** Copies a link that opens this saved review or comparison. The person opening it still needs the access code. */
-export async function copyShareLink(tab: "rfp" | "proposals", id: string, button: HTMLElement) {
+/** Copies a link that opens this saved review, comparison or project. The person opening it still needs the access code. */
+export async function copyShareLink(tab: "rfp" | "proposals" | "project", id: string, button: HTMLElement) {
   const url = `${location.origin}${location.pathname}#${tab}/${encodeURIComponent(id)}`;
   try {
     await navigator.clipboard.writeText(url);

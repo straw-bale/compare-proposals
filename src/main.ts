@@ -3,7 +3,8 @@ import type { ChatResponse, Comparison, Proposal } from "../lib/claude";
 import { estimateChat, estimateCompare, estimateExtract, sumRanges, usd, usdRange, type Usage } from "../lib/cost";
 import {
   deleteComparison,
-  fillProjectNames,
+  listProjects,
+  projectLabel,
   getReading,
   hashFile,
   listComparisons,
@@ -15,6 +16,7 @@ import {
 import { accessCode, post, setUnauthorizedHandler } from "./api";
 import { confirmDelete, noticeModal } from "./modal";
 import { getCurrentRfp, initRfp, openRfp } from "./rfp";
+import { clearPendingProject, initProject, openProject, pendingProject, showProjectList } from "./project";
 import { setPrintName } from "./print";
 import { copyShareLink, parseHash } from "./share";
 import { briefingHtml, esc, feeTable, firmName, notesHtml, scopeTable, type Sourced } from "./table";
@@ -48,7 +50,7 @@ const filesEl = $<HTMLOListElement>("files");
 const runBtn = $<HTMLButtonElement>("run");
 const clearBtn = $<HTMLButtonElement>("clear");
 const statusEl = $<HTMLSpanElement>("status");
-const projectEl = $<HTMLInputElement>("project");
+const projectEl = $<HTMLSelectElement>("project");
 const results = $<HTMLElement>("results");
 
 let entries: Entry[] = [];
@@ -283,7 +285,9 @@ runBtn.addEventListener("click", async () => {
       pdf_tokens: e.pdfTokens,
       source_hash: e.hash ?? undefined,
     }));
-    const projectName = null;
+    // Started from a project page: link the comparison to that project.
+    const linkTo = pendingProject();
+    const projectName = linkTo?.name ?? null;
     const { comparison: cmp, usage } = await post<{ comparison: Comparison; usage: Usage }>(
       "/api/compare",
       JSON.stringify({ projectName, proposals }),
@@ -293,7 +297,9 @@ runBtn.addEventListener("click", async () => {
     const costs = [...done.map((e) => (e.reused ? 0 : e.usage?.cost_usd)), usage.cost_usd];
     const costUsd = costs.reduce<number>((a, c) => a + (c ?? 0), 0);
     const partial = costs.some((c) => c == null);
-    current = { id: crypto.randomUUID(), savedAt: Date.now(), proposals, cmp, projectName, messages: [], costUsd, costPartial: partial };
+    current = { id: crypto.randomUUID(), savedAt: Date.now(), proposals, cmp, projectName, projectId: linkTo?.id, messages: [], costUsd, costPartial: partial };
+    clearPendingProject();
+    showIntakeProject();
     resetChat();
     showResults(true);
     const saveError = await persist().then(() => "", (err: Error) => ` Not saved: ${err.message}`);
@@ -313,12 +319,27 @@ runBtn.addEventListener("click", async () => {
 
 // ---------- Results ----------
 
-// Optional: file the comparison under a project name (shared with RFP reviews).
-projectEl.addEventListener("focus", () => fillProjectNames());
-projectEl.addEventListener("change", async () => {
+// Optional: link the comparison to a project (projects are started from an RFP review).
+const LEGACY = "__legacy"; // a typed project name from before projects existed
+
+async function fillProjectSelect() {
   if (!current) return;
-  current.projectName = projectEl.value.trim() || null;
-  await persist();
+  const c = current;
+  const projects = await listProjects();
+  const linked = projects.some((p) => p.id === c.projectId);
+  projectEl.innerHTML =
+    `<option value="">No project</option>` +
+    (!linked && c.projectName ? `<option value="${LEGACY}" selected>${esc(c.projectName)}</option>` : "") +
+    projects.map((p) => `<option value="${esc(p.id)}" ${p.id === c.projectId ? "selected" : ""}>${esc(projectLabel(p))}</option>`).join("");
+}
+
+projectEl.addEventListener("change", async () => {
+  if (!current || projectEl.value === LEGACY) return;
+  const project = (await listProjects()).find((p) => p.id === projectEl.value);
+  current.projectId = project?.id;
+  current.projectName = project ? projectLabel(project) : null;
+  await persist().catch((err) => noticeModal("Not saved", (err as Error).message));
+  await fillProjectSelect();
 });
 
 const scopeEl = $<HTMLTableElement>("scope");
@@ -371,7 +392,7 @@ function showResults(scroll: boolean) {
   scopeEl.classList.toggle("diff-only", diffOnly.checked && !single);
   $("notes").innerHTML = notesHtml(proposals);
   renderCost();
-  projectEl.value = projectName ?? "";
+  fillProjectSelect();
   $("print-meta").textContent = [projectName, new Date().toLocaleDateString()].filter(Boolean).join(" — ");
   results.hidden = false;
   if (scroll) results.scrollIntoView({ behavior: "smooth" });
@@ -651,12 +672,13 @@ function start() {
   started = true;
   renderSaved();
   initRfp();
+  initProject();
   showTab();
 }
 
 // ---------- Tabs ----------
 
-const TABS = ["rfp", "proposals", "fee"];
+const TABS = ["rfp", "proposals", "fee", "project"];
 // The wireframe is local-only (not committed), so only link to it in dev.
 if (import.meta.env.PROD) $("wireframe-link").remove();
 function showTab() {
@@ -664,10 +686,25 @@ function showTab() {
   const tab = TABS.includes(t) ? t : "rfp";
   for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
   document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === tab));
+  if (tab === "proposals") showIntakeProject();
   if (tab !== "proposals") setChatOpen(false);
   // A shared link (#rfp/<id> or #proposals/<id>) opens that item once the access code has been accepted.
-  if (id && started) tab === "rfp" ? openRfp(id) : tab === "proposals" && openComparison(id);
+  if (id && started) tab === "rfp" ? openRfp(id) : tab === "proposals" ? openComparison(id) : tab === "project" && openProject(id);
+  if (!id && tab === "project" && started) showProjectList();
 }
+
+/** On the intake, names the project the next comparison will be linked to (when started from a project page). */
+function showIntakeProject() {
+  const p = pendingProject();
+  const el = $("intake-project");
+  el.hidden = !p;
+  el.innerHTML = p ? `For project <b>${esc(p.name)}</b> <button class="link" data-unpend>Don't link</button>` : "";
+}
+$("intake-project").addEventListener("click", (e) => {
+  if (!(e.target as HTMLElement).closest("[data-unpend]")) return;
+  clearPendingProject();
+  showIntakeProject();
+});
 addEventListener("hashchange", showTab);
 showTab();
 

@@ -1,7 +1,6 @@
-import type { Comparison, Proposal, Rfp } from "../lib/claude";
+import type { Comparison, ProjectCheck, Proposal, Rfp } from "../lib/claude";
 import type { Sourced } from "./table";
 import { accessCode } from "./api";
-import { esc } from "./table";
 
 
 export type ChatMessage = { role: "user" | "assistant"; text: string; updated?: boolean; cost?: number | null };
@@ -10,6 +9,7 @@ export type SavedComparison = {
   id: string;
   savedAt: number;
   projectName: string | null;
+  projectId?: string;
   proposals: Sourced[];
   cmp: Comparison;
   messages: ChatMessage[];
@@ -34,6 +34,7 @@ export type SavedRfp = {
   files: string[];
   rfp: Rfp;
   project?: string | null;
+  projectId?: string;
   costUsd?: number | null;
 };
 
@@ -41,15 +42,29 @@ const DB = "proposal-comparison";
 const STORE = "comparisons";
 const READINGS = "readings";
 const RFPS = "rfps";
+const PROJECTS = "projects";
+
+/** A project ties an RFP review and its comparisons together (they store its id as projectId). */
+export type SavedProject = {
+  id: string;
+  savedAt: number;
+  name: string;
+  /** The firm's own project number, optional; shown before the name. */
+  number?: string;
+  rfpId?: string;
+  /** The last check of its proposals against the RFP. firms[i] names firm_index i; comparisonIds are what was checked. */
+  check?: ProjectCheck & { firms: string[]; comparisonIds: string[]; checkedAt: number; costUsd: number | null };
+};
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 3);
+    const req = indexedDB.open(DB, 4);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
       if (!db.objectStoreNames.contains(READINGS)) db.createObjectStore(READINGS, { keyPath: "hash" });
       if (!db.objectStoreNames.contains(RFPS)) db.createObjectStore(RFPS, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -69,8 +84,8 @@ async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
 // Supabase (through /api/db, so the key stays on the server) when it's configured; otherwise this browser's
 // IndexedDB. The server answers 503 when Supabase isn't set up, and the app then stays local for the session.
 
-type Kind = "comparisons" | "rfps" | "readings";
-const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS };
+type Kind = "comparisons" | "rfps" | "readings" | "projects";
+const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS, projects: PROJECTS };
 let local = false;
 /** False once the app has fallen back to this browser's storage (Supabase not configured). */
 export const savesShared = () => !local;
@@ -128,6 +143,26 @@ export const deleteComparison = (id: string) => deleteRecord("comparisons", id);
 export const saveRfp = (r: SavedRfp) => saveRecord("rfps", r);
 export const listRfps = () => listRecords<SavedRfp>("rfps");
 export const deleteRfp = (id: string) => deleteRecord("rfps", id);
+/** "24-017 Gas Dynamics Lab", or just the name when there's no number. Reviews and comparisons show this. */
+export const projectLabel = (p: SavedProject) => (p.number ? `${p.number} ${p.name}` : p.name);
+
+/** Asks for a project's number and name. Resolves null on cancel. */
+export async function askProjectName(title: string, confirm: string, p: { number?: string; name: string }) {
+  const { formModal } = await import("./modal");
+  const values = await formModal({
+    title,
+    fields: [
+      { label: "Project number", value: p.number ?? "", placeholder: "Optional" },
+      { label: "Project name", value: p.name, required: true },
+    ],
+    confirm,
+  });
+  return values && { number: values[0] || undefined, name: values[1] };
+}
+
+export const saveProject = (p: SavedProject) => saveRecord("projects", p);
+export const listProjects = () => listRecords<SavedProject>("projects");
+export const deleteProject = (id: string) => deleteRecord("projects", id);
 export const saveReading = (r: SavedReading) => saveRecord("readings", r).catch(console.error);
 
 export async function getReading(hash: string): Promise<SavedReading | undefined> {
@@ -148,19 +183,4 @@ export async function hashFile(file: File): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/** Every project name used so far, for the "Add to project" suggestions. */
-export async function listProjectNames(): Promise<string[]> {
-  const [cmps, rfps] = await Promise.all([listComparisons(), listRfps()]);
-  const names = [...cmps.map((c) => c.projectName), ...rfps.map((r) => r.project)].filter((n): n is string => !!n);
-  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
-}
-
-/** Fills the shared <datalist> with existing project names, plus an optional suggestion. */
-export async function fillProjectNames(suggest?: string) {
-  const names = await listProjectNames();
-  if (suggest && !names.includes(suggest)) names.unshift(suggest);
-  const list = document.getElementById("project-names");
-  if (list) list.innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join("");
 }

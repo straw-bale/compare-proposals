@@ -249,6 +249,9 @@ dialog.modal { border: 1px solid var(--ink); padding: 24px; max-width: 420px; wi
 dialog.modal::backdrop { background: rgba(17, 17, 17, .35); }
 dialog.modal h2 { font-size: 18px; font-weight: 500; margin: 0 0 8px; }
 dialog.modal p { margin: 0 0 20px; color: var(--ink); font-size: 14px; }
+.modal-field { display: block; margin: 0 0 20px; font-size: 14px; }
+.modal-field span { display: block; margin-bottom: 6px; }
+.modal-field input { width: 100%; font: inherit; font-size: 15px; padding: 8px; border: 1px solid var(--ink); outline: none; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .btn.primary.danger { background: var(--bad); border-color: var(--bad); }
 .btn.primary.danger:hover:not(:disabled) { background: #8f1e18; }
@@ -267,14 +270,21 @@ body.chat-open .feedback { display: none; }
 .feedback-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
 .feedback-actions .status { text-transform: none; letter-spacing: 0; font-size: 12px; }
 
-/* Optional project name, shown with results */
-input.project {
-  font: inherit; font-size: 14px; border: 0; border-bottom: 1px solid var(--rule); padding: 4px 0; width: 240px;
-  background: transparent; outline: none;
-}
-input.project:focus { border-bottom-color: var(--ink); }
-input.project::placeholder { color: #aaa; }
-.rfp-top input.project { margin-right: auto; margin-left: 32px; }
+/* Project link, shown with results */
+select.project { font: inherit; font-size: 14px; padding: 4px 6px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); max-width: 280px; }
+select.project:focus { border-color: var(--ink); outline: none; }
+.rfp-top .project-name { margin-right: auto; margin-left: 32px; font-size: 14px; }
+.rfp-top .project-name b { font-weight: 600; }
+
+/* Project page */
+#project-page { max-width: 960px; }
+#project-page .block.saved, .project-list { margin-top: 0; }
+#project-page .actions { margin-top: 16px; }
+.coverage { margin-bottom: 24px; }
+.coverage td.cv { width: 90px; font-weight: 600; }
+.coverage .cv-missing td.cv { color: var(--bad); }
+.intake-project { font-size: 14px; margin: 16px 0 0; }
+.intake-project .link { margin-left: 8px; font-size: 13px; }
 
 /* RFP review */
 #rfp-intake { max-width: 960px; }
@@ -301,6 +311,9 @@ mark { padding: 0 3px; }
   border: 1px solid var(--ink); background: var(--bg); padding: 0; font: 700 15px/1 var(--sans); color: var(--ink); cursor: pointer;
 }
 .q-remove:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
+.q-add { display: flex; gap: 8px; margin-top: 12px; }
+.q-add input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); outline: none; }
+.q-add input:focus { border-color: var(--ink); }
 .label .link { margin-left: 8px; font-size: 13px; font-weight: 400; }
 .facts th[scope="row"] { width: 45%; }
 .facts td.num { text-align: right; padding-right: 0; }
@@ -311,7 +324,7 @@ mark { padding: 0 3px; }
 @media print {
   /* Printed RFP reviews end with this reminder, in a box so it isn't missed. */
   .print-note { display: block; margin-top: 24px; padding: 10px; border: 1.5pt solid #000; font-weight: 700; font-size: 12px; break-inside: avoid; }
-  header.site, footer.site, .feedback, .q-remove, #intake, #rfp-intake, .rfp-top, .toolbar, .chat, input.project { display: none !important; }
+  header.site, footer.site, .feedback, .q-remove, .q-add, #intake, #rfp-intake, .rfp-top, .toolbar, .chat, select.project, .project-name { display: none !important; }
   body.chat-open main, body.chat-open footer.site { margin-right: 0; }
   main { padding: 0; max-width: none; }
   #results { border: 0; margin: 0; padding: 0; }

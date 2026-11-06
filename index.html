@@ -21,6 +21,7 @@
     <header class="site">
       <a class="mark" href="/">Proposal Workspace</a>
       <nav class="tabs">
+        <a href="#project" data-tab="project">Projects</a>
         <a href="#rfp" data-tab="rfp">RFP</a>
         <a href="#proposals" data-tab="proposals">Proposals</a>
         <a href="#fee" data-tab="fee">Fee</a>
@@ -54,6 +55,10 @@
         <section><p class="lede">Fee estimating is coming next.<span id="wireframe-link"> <a href="/wireframes/index.html">See the wireframe</a>.</span></p></section>
       </div>
 
+      <div id="tab-project" class="tab" hidden>
+        <section id="project-page"></section>
+      </div>
+
       <div id="tab-proposals" class="tab" hidden>
       <section id="intake">
         <p class="lede">
@@ -81,6 +86,7 @@
 
         <ol id="files" class="files"></ol>
 
+        <p id="intake-project" class="intake-project" hidden></p>
         <div class="actions">
           <button id="run" class="btn primary" disabled>Compare</button>
           <button id="clear" class="btn" hidden>Clear</button>
@@ -101,7 +107,7 @@
         </div>
 
         <div class="toolbar">
-          <input id="project" class="project" list="project-names" placeholder="Add to project" autocomplete="off" />
+          <select id="project" class="project" aria-label="Project"></select>
           <label class="toggle"
             ><input id="diff-only" type="checkbox" /> Show differences
             only</label
@@ -182,7 +188,6 @@
       <button id="feedback-toggle" class="btn feedback-toggle" type="button">Feedback</button>
     </div>
 
-    <datalist id="project-names"></datalist>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

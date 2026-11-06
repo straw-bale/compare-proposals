@@ -39,3 +39,13 @@ create table if not exists feedback (
 );
 alter table feedback enable row level security;
 grant select, insert, update, delete on feedback to service_role;
+
+-- Projects: an RFP review and its comparisons link to one by id (stored in their data as projectId).
+create table if not exists projects (
+  id uuid primary key,
+  name text,
+  data jsonb not null,
+  saved_at timestamptz not null default now()
+);
+alter table projects enable row level security;
+grant select, insert, update, delete on projects to service_role;

@@ -114,7 +114,7 @@ export const RFP_FACTS = {
   building_size: "Building size",
   construction_budget: "Construction budget",
   delivery_method: "Delivery method",
-  services: "Services requested",
+  phases: "Phases",
   fee_format: "Fee format",
   contract: "Contract",
   insurance: "Insurance",
@@ -132,11 +132,13 @@ export const RfpSchema = z.object({
   // A fixed set so every review reads the same; value "" when the RFP doesn't say.
   facts: z.object(
     Object.fromEntries(
-      ["location", "building_size", "construction_budget", "delivery_method", "services", "fee_format", "contract", "insurance", "page_limit", "submission", "contact"].map(
+      ["location", "building_size", "construction_budget", "delivery_method", "phases", "fee_format", "contract", "insurance", "page_limit", "submission", "contact"].map(
         (k) => [k, z.object({ value: z.string(), page: z.number() })],
       ),
     ) as Record<RfpFactKey, z.ZodObject<{ value: z.ZodString; page: z.ZodNumber }>>,
   ),
+  // One row per discipline the design team is asked to provide, so the team can see which consultants it needs.
+  services: z.array(z.object({ discipline: z.string(), detail: z.string(), page: z.number() })),
   dates: z.array(
     z.object({
       label: z.string(),
@@ -151,6 +153,28 @@ export const RfpSchema = z.object({
   scoring: z.array(z.object({ criterion: z.string(), weight: z.string() })),
 });
 export type Rfp = z.infer<typeof RfpSchema>;
+
+// A project's consultant proposals checked against its RFP review: who covers each requested service, and what's missing or wrong.
+export const ProjectCheckSchema = z.object({
+  summary: z.string(),
+  coverage: z.array(
+    z.object({
+      discipline: z.string(),
+      status: z.enum(["covered", "partial", "missing", "in_house"]),
+      firm_indexes: z.array(z.number()),
+      note: z.string(),
+    }),
+  ),
+  issues: z.array(
+    z.object({
+      level: z.enum(["high", "medium", "low"]),
+      title: z.string(),
+      detail: z.string(),
+      firm_indexes: z.array(z.number()),
+    }),
+  ),
+});
+export type ProjectCheck = z.infer<typeof ProjectCheckSchema>;
 
 // What the chat model returns. Corrections come back as JSON text (validated below against the full schemas),
 // because nesting whole proposals/analyses here would exceed the structured-output union-field limit.
@@ -183,6 +207,7 @@ Rules:
 - disciplines: the services this proposal covers, in plain words (e.g. "Audio-visual design", "Architectural acoustics", "Mechanical").
 - scope_items should be granular and comparable: one item per distinct service or task in the proposal's own discipline terms (e.g. for MEP "Load calculations"; for AV "AV system design narrative", "Equipment specifications"; for acoustics "Background noise survey", "Sound isolation recommendations"; across disciplines "Site visits during construction (4)", "Record drawings"). Use short category names that fit the discipline, plus common ones such as Survey & Existing Conditions, Design, Documentation & Specifications, Coordination & Meetings, Bidding, Construction Administration, Testing & Commissioning, Deliverables, General.
 - Mark items the proposal explicitly excludes as "excluded" and items offered as add-ons or alternates as "optional". Include the page number where each item appears; use 0 when you can't tell. Use 0 for fee_items.page the same way.
+- FF&E (furniture, fixtures and equipment): always check for it. If the proposal mentions FF&E selection, specification, procurement, coordination or installation in any form, record it as its own scope item (category "FF&E") with its status, wording and page, even if it's only listed as excluded or by others.
 - Capture exclusions, assumptions, deliverables, and any clarifications, risks, or unusual terms (caps, limits, NTE, number of revisions or meetings, insurance, schedule dependencies).`;
 
 const COMPARE_SYSTEM = `You are a senior architect reviewing consultant proposals for a project-architect colleague. Proposals can be from any architecture or engineering discipline. You receive structured extractions of one or more proposals, identified by firm_index.
@@ -193,6 +218,7 @@ Build a normalized master scope checklist so the proposals can be compared line 
 - Merge equivalent items across firms into a single row with clear, neutral wording. Group rows into categories that fit the discipline(s) (e.g. for MEP: Mechanical, Electrical, Plumbing; for AV: Systems Design, Infrastructure, Programming & Commissioning; plus common ones like Survey & Existing Conditions, Coordination & Meetings, Construction Administration, Deliverables, General). Order categories and items logically.
 - For every row, give exactly one status per firm (every firm_index): included, excluded (explicitly excluded), optional (add-on/alternate), or not_mentioned (silent). Distinguish excluded from not_mentioned carefully. Use note for meaningful qualifiers (e.g. "4 visits", "basic only") and page when known (0 if unknown).
 - Prefer rows where firms differ or that matter for an apples-to-apples comparison; don't pad with trivial items.
+- Always include an "FF&E" category with a row for FF&E services (furniture, fixtures and equipment selection, specification, coordination), whatever the discipline, with each firm's status. FF&E is often left out, so if any firm is excluded or not_mentioned for it, add a flag saying which firms (level medium; high if the firm is the architect or interiors consultant) and a question asking each of those firms whether FF&E is included.
 
 Define scenarios first. If any proposal prices multiple scenarios (construction-budget ranges, options, alternates), list each distinct scenario once with a clear common name (e.g. "$5M–$8M construction budget"). In firm_labels, map every non-null fee_items.scenario string from every firm to its scenario, using that firm's exact string. Leave scenarios empty if no proposal has them. Lines with scenario null apply to all scenarios.
 
@@ -228,13 +254,22 @@ Be brief. The reader should take it in within two minutes. Include only what aff
 
 - project_name, client: short everyday names.
 - summary: 2-3 plain sentences: what is being procured, the scope, and the single biggest consideration.
-- facts: fill every field from the RFP, a few words each; value "" when the RFP doesn't say. location (city/site), building_size (area, floors), construction_budget, delivery_method, services (what the design team is asked to provide), fee_format (how fees must be submitted), contract (form or type of agreement), insurance (required coverage), page_limit, submission (format, copies, where to send), contact (procurement contact name and email).
-- dates: every procurement date (issued, site visit, pre-proposal meeting, questions due, addenda, proposal due, interviews, award) and key project milestones (design start, construction start/finish). date is YYYY-MM-DD when a specific day is given, otherwise "". when is short and in one consistent format: "Jul 12, 2023, 9:30 AM" for a specific day (time only if stated), "Sep 2023" for a month, otherwise a few plain words (e.g. "Spring 2028", "After interviews, TBD"). mandatory is true only when attendance or the deadline is stated as mandatory or disqualifying. Order chronologically.
+- facts: fill every field from the RFP, a few words each; value "" when the RFP doesn't say. location (city/site), building_size (area, floors), construction_budget, delivery_method, phases (the design phases the team is asked to provide, e.g. "SD through CA"), fee_format (how fees must be submitted), contract (form or type of agreement), insurance (required coverage), page_limit, submission (format, copies, where to send), contact (procurement contact name and email).
+- services: one entry per discipline or specialty the design team is asked to provide, so the firm can see which consultants it needs (e.g. Architecture, Structural, Mechanical, Electrical, Plumbing, Fire protection, Civil, Landscape, Lab planning, Hazardous materials abatement specs, Cost estimating). Split combined terms like "MEP" into separate disciplines. discipline is the plain name; detail is a few words on its extent only when it differs from the overall phases or is limited (e.g. "Specs only", "Survey by owner"), otherwise "". List only what the RFP asks for; never add disciplines it doesn't mention.
+- dates: every procurement date (issued, site visit, pre-proposal meeting, questions due, addenda, proposal due, interviews, award) and key project milestones (design start, construction start/finish). date is YYYY-MM-DD when a specific day is given, otherwise "". when is short and in one consistent format: "Jul 12, 2023, 9:30 AM" for a specific day (time only if stated), "Sep 2023" for a month, otherwise a few plain words (e.g. "Spring 2028", "After interviews, TBD"). mandatory is true only for a pre-bid / pre-proposal meeting, conference, site visit or walk-through whose attendance the RFP states is mandatory or required to submit; it is false for every other date, including the proposal due date and other deadlines. Order chronologically.
 - watch_outs: at most 8, most important first. Look for disqualifiers, onerous contract terms (indemnity, duty to defend, liability, IP, payment terms, fee caps), internal inconsistencies (quote both versions with pages), unusually heavy or vague scope (many meetings, long CA, unclear consultant responsibilities), fee constraints, and unrealistic schedules. critical is true only for things that could disqualify the proposal or cost real money. detail is one sentence.
-- Always fill every section the same way: dates, watch_outs, questions and scoring are empty lists only when the RFP truly has nothing for them.\n- questions: at most 6 clarification questions to submit to the client, phrased ready to paste.
+- Always fill every section the same way: services, dates, watch_outs, questions and scoring are empty lists only when the RFP truly has nothing for them.\n- questions: at most 6 clarification questions to submit to the client, phrased ready to paste.
 - scoring: evaluation criteria with their weights or points as written (weight "" if not given).
 - page: the page number where it appears; 0 if unknown.
 - Plain, everyday professional language. No legal boilerplate. Never invent details that aren't in the documents.`;
+
+const CHECK_SYSTEM = `You are a senior principal at an architecture firm assembling the consultant team for a proposal response. You receive the firm's review of the RFP (JSON) and the data extracted from each consultant proposal received so far (identified by firm_index). Check the proposals against what the RFP asks for, so the team can see which consultants it still needs and what to fix before submitting.
+
+- summary: 1-2 plain sentences: whether the team covers the RFP, and the single most important gap or problem.
+- coverage: one row per entry in the RFP's services list, in the same order (if the list is empty, use the disciplines the RFP's phases and summary make clear). status: covered when at least one proposal includes it for the phases the RFP requires; partial when a proposal covers it only in part (fewer phases, limited scope, items excluded); missing when no proposal covers it; in_house only for Architecture (and interiors, if the RFP lists it) when no proposal covers it, since the firm provides those itself. firm_indexes: the proposals that cover it. note: a few words on what's short for partial, otherwise "".
+- issues: at most 10, most important first. Look for: requested services with no consultant; proposals whose phases fall short of the RFP's (e.g. stop at CD when the RFP requires CA); scope a consultant excludes that the RFP requires (FF&E, abatement, commissioning, cost estimating, etc.); project name, client, location or size that doesn't match the RFP; fee format that doesn't fit how the RFP says fees must be submitted; schedules that conflict with the RFP's dates; insurance or contract terms below the RFP's requirements; two proposals for the same discipline (a choice to make, level low). level: high = leaves a requested service uncovered or could disqualify the response; medium = needs fixing or clarifying with the consultant; low = worth noting. detail is one or two sentences, with page numbers when known.
+- Quote figures only as stated. Never add, convert or estimate fees. Never invent requirements the RFP review doesn't contain, or scope a proposal doesn't state.
+- Refer to consultants by their short firm name, never by firm_index. Plain, everyday professional language.`;
 
 // ---------- Calls ----------
 
@@ -403,6 +438,29 @@ export async function reviewRfp(files: { file_id: string; filename: string }[]):
   checkStop(msg);
   if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's RFP review.", 502);
   return { rfp: msg.parsed_output, usage: usageOf(msg) };
+}
+
+/** Checks a project's consultant proposals against its RFP review. Text only (no PDFs), so it's quick and cheap. */
+export async function checkProject(rfp: Rfp, proposals: Proposal[]): Promise<{ check: ProjectCheck; usage: Usage }> {
+  const payload = proposals.map((p, firm_index) => {
+    const { hourly_rates, fee_items, ...rest } = p;
+    return { firm_index, ...rest };
+  });
+  const stream = getClient().beta.messages.stream({
+    ...BASE,
+    system: CHECK_SYSTEM,
+    output_config: { effort: "high", format: betaZodOutputFormat(ProjectCheckSchema) },
+    messages: [
+      {
+        role: "user",
+        content: `RFP review (JSON):\n${JSON.stringify(rfp)}\n\nConsultant proposal extractions (JSON):\n${JSON.stringify(payload, null, 1)}`,
+      },
+    ],
+  });
+  const msg = await stream.finalMessage();
+  checkStop(msg);
+  if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's project check.", 502);
+  return { check: msg.parsed_output, usage: usageOf(msg) };
 }
 
 export type ChatTurn ={ role: "user" | "assistant"; content: string };

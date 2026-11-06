@@ -48,6 +48,9 @@ export const estimateRfp = (inputTokens: number): Range => range([inputTokens, i
 /** The comparison step, which reads the extracted data (not the PDFs) for n proposals. */
 export const estimateCompare = (n: number): Range => range([2_000 + n * 3_000, 2_000 + n * 8_000], [8_000, 25_000]);
 
+/** Checking a project's proposals against its RFP review (extracted data only) for n proposals. */
+export const estimateCheck = (n: number): Range => range([4_000 + n * 3_000, 4_000 + n * 8_000], [5_000, 20_000]);
+
 /**
  * A chat question. The PDFs, extracted data and analysis are cached together: the first question (or one after
  * ~5 idle minutes, or right after a correction changes the analysis) writes the cache; follow-ups read it.

@@ -1,7 +1,7 @@
 import { RFP_FACTS, type Rfp, type RfpFactKey } from "../lib/claude";
 import { estimateRfp, usd, usdRange, type Usage } from "../lib/cost";
 import { post, postPdf } from "./api";
-import { deleteRfp, fillProjectNames, listRfps, saveRfp, savesShared, type SavedRfp } from "./store";
+import { askProjectName, deleteRfp, listRfps, projectLabel, saveProject, saveRfp, savesShared, type SavedProject, type SavedRfp } from "./store";
 import { confirmDelete, confirmModal, noticeModal } from "./modal";
 import { copyShareLink } from "./share";
 import { esc } from "./table";
@@ -38,15 +38,7 @@ export function initRfp() {
   $("rfp-run").addEventListener("click", run);
   $("rfp-saved-list").addEventListener("click", onSavedClick);
   $("rfp-results").addEventListener("click", onResultsClick);
-  $("rfp-results").addEventListener("focusin", (e) => {
-    if ((e.target as HTMLElement).matches("[data-project]")) fillProjectNames(current?.rfp.project_name);
-  });
-  $("rfp-results").addEventListener("change", async (e) => {
-    const el = e.target as HTMLInputElement;
-    if (!current || !el.matches("[data-project]")) return;
-    current.project = el.value.trim() || null;
-    await saveRfp(current).catch((err) => alert(`Not saved: ${(err as Error).message}`));
-  });
+  $("rfp-results").addEventListener("submit", addQuestion);
   renderSaved();
 }
 
@@ -140,6 +132,22 @@ async function renderSaved() {
     .join("");
 }
 
+/** Creates a project from this review (name confirmed by the user) and links the review to it. */
+async function startProject(review: SavedRfp) {
+  const entered = await askProjectName("Start a project", "Start project", { name: review.project || review.rfp.project_name });
+  if (!entered) return;
+  const project: SavedProject = { id: crypto.randomUUID(), savedAt: Date.now(), ...entered, rfpId: review.id };
+  try {
+    await saveProject(project);
+    review.projectId = project.id;
+    review.project = projectLabel(project);
+    await saveRfp(review);
+  } catch (err) {
+    return noticeModal("Project not saved", (err as Error).message);
+  }
+  if (current === review) showResults();
+}
+
 /** The review on screen, if any. */
 export const getCurrentRfp = () => current;
 
@@ -218,8 +226,14 @@ function showResults() {
   $("rfp-results").innerHTML = `
     <div class="rfp-top">
       <button class="link" data-back>← All RFPs</button>
-      <input class="project" data-project list="project-names" placeholder="Add to project" autocomplete="off" value="${esc(current.project ?? "")}" />
-      <span class="tools"><button class="btn" data-share>Share</button><button class="btn" data-print>Print</button></span>
+      <span class="project-name">${
+        current.projectId
+          ? `Project: <a class="link" href="#project/${encodeURIComponent(current.projectId)}"><b>${esc(current.project ?? "")}</b></a>`
+          : current.project
+            ? `Project: <b>${esc(current.project)}</b>`
+            : ""
+      }</span>
+      <span class="tools">${current.projectId ? "" : '<button class="btn" data-start-project>Start project</button>'}<button class="btn" data-share>Share</button><button class="btn" data-print>Print</button></span>
     </div>
     <h1 class="headline">${esc(rfp.project_name)}</h1>
     <p class="rfp-sub">${esc(rfp.client)}${
@@ -240,11 +254,13 @@ function showResults() {
         )}
         ${section(
           `Questions to ask <button class="link" data-copy>Copy</button>`,
-          `<ol class="qs">${rfp.questions
-            .map((q, i) => `<li><button class="q-remove" data-remove-q="${i}" title="Remove this question" aria-label="Remove this question">×</button><span>${i + 1}. ${esc(q)}</span></li>`)
-            .join("")}</ol>`,
-          rfp.questions.length,
-          "None.",
+          (rfp.questions.length
+            ? `<ol class="qs">${rfp.questions
+                .map((q, i) => `<li><button class="q-remove" data-remove-q="${i}" title="Remove this question" aria-label="Remove this question">×</button><span>${i + 1}. ${esc(q)}</span></li>`)
+                .join("")}</ol>`
+            : `<p class="none">None.</p>`) +
+            `<form class="q-add" data-add-q><input type="text" aria-label="New question" placeholder="Add a question" autocomplete="off" /><button class="btn" type="submit">Add</button></form>`,
+          1,
         )}
       </div>
       <div>
@@ -253,6 +269,7 @@ function showResults() {
           `<table class="grid facts">${factsRows(rfp.facts)}</table>`,
           1,
         )}
+        ${servicesBlock(rfp)}
         ${section(
           "Scoring",
           `<table class="grid facts">${rfp.scoring.map((s) => `<tr><th scope="row">${esc(s.criterion)}</th><td class="num">${esc(s.weight)}</td></tr>`).join("")}</table>`,
@@ -272,14 +289,43 @@ function showResults() {
 const section = (title: string, body: string, count: number, empty = "Not stated in the RFP.") =>
   `<div class="block"><h2 class="label">${title}</h2>${count ? body : `<p class="none">${empty}</p>`}</div>`;
 
+/** Services requested, one discipline per row. Reviews saved before the list show their one-line summary. */
+function servicesBlock(rfp: Rfp): string {
+  if (Array.isArray(rfp.services))
+    return section(
+      "Services requested",
+      `<table class="grid facts">${rfp.services
+        .map((s) => `<tr><th scope="row">${esc(s.discipline)}${pg(s.page)}</th><td>${esc(s.detail)}</td></tr>`)
+        .join("")}</table>`,
+      rfp.services.length,
+    );
+  const old = (rfp.facts as Partial<Record<string, { value: string; page: number }>>).services;
+  return section("Services requested", `<p class="none">${esc(old?.value ?? "")}${pg(old?.page ?? 0)}</p>`, old?.value ? 1 : 0);
+}
+
 /** Key facts in a fixed order. Reviews saved before the fixed list keep their own label/value pairs. */
 function factsRows(facts: Rfp["facts"] | { label: string; value: string; page: number }[]): string {
   const rows = Array.isArray(facts)
     ? facts.map((f) => [f.label, f.value, f.page] as const)
-    : (Object.keys(RFP_FACTS) as RfpFactKey[]).map((k) => [RFP_FACTS[k], facts[k]?.value ?? "", facts[k]?.page ?? 0] as const);
+    : (Object.keys(RFP_FACTS) as RfpFactKey[]).filter((k) => facts[k]).map((k) => [RFP_FACTS[k], facts[k].value, facts[k].page] as const);
   return rows
-    .map(([label, value, page]) => `<tr><th scope="row">${esc(label)}</th><td>${value ? esc(value) + pg(page) : "Not stated"}</td></tr>`)
+    .map(([label, value, page]) => `<tr><th scope="row">${esc(label)}${value ? pg(page) : ""}</th><td>${value ? esc(value) : "Not stated"}</td></tr>`)
     .join("");
+}
+
+/** Adds the typed question to the end of the list and saves the review. */
+async function addQuestion(e: Event) {
+  const form = (e.target as HTMLElement).closest("[data-add-q]");
+  if (!form || !current) return;
+  e.preventDefault();
+  const text = form.querySelector("input")!.value.trim();
+  if (!text) return;
+  current.rfp.questions.push(text);
+  const y = scrollY;
+  showResults();
+  scrollTo(0, y);
+  $("rfp-results").querySelector<HTMLInputElement>("[data-add-q] input")?.focus();
+  await saveRfp(current).catch((err) => noticeModal("Not saved", (err as Error).message));
 }
 
 async function onResultsClick(e: Event) {
@@ -292,6 +338,8 @@ async function onResultsClick(e: Event) {
     renderSaved();
   } else if (t.closest("[data-print]")) {
     print();
+  } else if (t.closest("[data-start-project]") && current) {
+    await startProject(current);
   } else if (t.closest("[data-share]") && current) {
     await copyShareLink("rfp", current.id, t.closest("[data-share]") as HTMLElement);
   } else if (t.closest("[data-remove-q]") && current) {
