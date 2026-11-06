@@ -42,6 +42,9 @@ const range = (inTokens: Range, outTokens: Range, inPrice = MAIN.input): Range =
 /** Reading one PDF, given its measured input tokens. */
 export const estimateExtract = (inputTokens: number): Range => range([inputTokens, inputTokens], [5_000, 20_000]);
 
+/** Reviewing an RFP and its addenda, given their combined measured input tokens. */
+export const estimateRfp = (inputTokens: number): Range => range([inputTokens, inputTokens], [6_000, 25_000]);
+
 /** The comparison step, which reads the extracted data (not the PDFs) for n proposals. */
 export const estimateCompare = (n: number): Range => range([2_000 + n * 3_000, 2_000 + n * 8_000], [8_000, 25_000]);
 

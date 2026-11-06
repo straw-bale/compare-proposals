@@ -6,6 +6,7 @@
   --bg: #fff;
   --good: #111;
   --bad: #b3261e;
+  --blue: #2f5bd3;
   --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
@@ -19,11 +20,22 @@ body {
   font: 15px/1.5 var(--sans);
 }
 
+/* Footer sits at the bottom of short pages too */
+body { min-height: 100vh; display: flex; flex-direction: column; }
+main { flex: 1; }
+footer.site { background: var(--blue); color: #fff; padding: 14px 32px; font-size: 12px; line-height: 1.5; }
+
 /* Header */
 header.site {
   display: flex; justify-content: space-between; align-items: baseline;
   padding: 20px 32px; border-bottom: 1px solid var(--ink);
 }
+header.site { justify-content: flex-start; gap: 40px; }
+nav.tabs { display: flex; gap: 24px; }
+nav.tabs a { color: var(--muted); text-decoration: none; padding-bottom: 2px; border-bottom: 2px solid transparent; }
+nav.tabs a:hover { color: var(--ink); }
+nav.tabs a.on { color: var(--ink); border-bottom-color: var(--ink); }
+.tab[hidden] { display: none; }
 .mark { font-size: 15px; font-weight: 500; color: var(--ink); text-decoration: none; }
 .meta, .label, .status, .legend, .toggle {
   font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
@@ -184,7 +196,7 @@ table.diff-only tr.same { display: none; }
   display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--ink);
 }
 .chat[hidden] { display: none; }
-body.chat-open main { margin-right: 420px; }
+body.chat-open main, body.chat-open footer.site { margin-right: 420px; }
 .chat-head { display: flex; justify-content: space-between; align-items: baseline; padding: 20px 20px 12px; border-bottom: 1px solid var(--rule); }
 .chat-head .label { margin: 0; }
 .chat-log { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; font-size: 14px; }
@@ -213,13 +225,13 @@ body.chat-open main { margin-right: 420px; }
 .chat-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
 @media (max-width: 900px) {
   .chat { width: 100%; border-left: 0; }
-  body.chat-open main { margin-right: 0; }
+  body.chat-open main, body.chat-open footer.site { margin-right: 0; }
 }
 
 .print-head { display: none; }
 
 @media (max-width: 640px) {
-  header.site, main { padding-left: 16px; padding-right: 16px; }
+  header.site, main, footer.site { padding-left: 16px; padding-right: 16px; }
   .lede { font-size: 18px; }
   .toolbar { flex-direction: column; align-items: flex-start; }
   .headline { font-size: 20px; }
@@ -227,11 +239,43 @@ body.chat-open main { margin-right: 420px; }
   .scroll table.grid { min-width: var(--min-table, 0px); }
 }
 
+/* Optional project name, shown with results */
+input.project {
+  font: inherit; font-size: 14px; border: 0; border-bottom: 1px solid var(--rule); padding: 4px 0; width: 240px;
+  background: transparent; outline: none;
+}
+input.project:focus { border-bottom-color: var(--ink); }
+input.project::placeholder { color: #aaa; }
+.rfp-top input.project { margin-right: auto; margin-left: 32px; }
+
+/* RFP review */
+#rfp-intake { max-width: 960px; }
+.rfp-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.rfp-sub { color: var(--muted); margin: 0 0 16px; }
+.rfp-sub .flag { color: var(--bad); }
+.rfp-cols { display: grid; grid-template-columns: 3fr 2fr; gap: 56px; }
+.pg { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: 4px; white-space: nowrap; }
+.dates .when { width: 34%; font-variant-numeric: tabular-nums; }
+.dates .in { width: 22%; text-align: right; color: var(--muted); padding-right: 0; }
+.dates tr.past td { color: #aaa; }
+.must { color: var(--bad); font-size: 12px; margin-left: 6px; }
+.watch { list-style: none; padding: 0; margin: 0; font-size: 14px; }
+.watch li { padding: 10px 0 10px 14px; border-top: 1px solid var(--rule); position: relative; }
+.watch li.critical::before { content: ""; position: absolute; left: 0; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+.watch b { font-weight: 500; }
+.watch p { margin: 2px 0 0; color: #444; }
+.qs { margin: 0; padding-left: 18px; font-size: 14px; }
+.qs li { margin-bottom: 6px; }
+.label .link { text-transform: none; letter-spacing: 0; margin-left: 8px; font-size: 12px; }
+.facts th[scope="row"] { width: 45%; }
+.facts td.num { text-align: right; padding-right: 0; }
+@media (max-width: 900px) { .rfp-cols { grid-template-columns: 1fr; gap: 0; } }
+
 /* Print / PDF */
 @page { margin: 12mm; }
 @media print {
-  header.site, #intake, .toolbar, .chat { display: none !important; }
-  body.chat-open main { margin-right: 0; }
+  header.site, footer.site, #intake, #rfp-intake, .rfp-top, .toolbar, .chat, input.project { display: none !important; }
+  body.chat-open main, body.chat-open footer.site { margin-right: 0; }
   main { padding: 0; max-width: none; }
   #results { border: 0; margin: 0; padding: 0; }
   .print-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #000; padding-bottom: 8px; margin-bottom: 20px; }

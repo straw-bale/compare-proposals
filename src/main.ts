@@ -2,6 +2,7 @@ import type { ChatResponse, Comparison, Proposal } from "../lib/claude";
 import { estimateChat, estimateCompare, estimateExtract, sumRanges, usd, usdRange, type Usage } from "../lib/cost";
 import {
   deleteComparison,
+  fillProjectNames,
   getReading,
   hashFile,
   listComparisons,
@@ -10,6 +11,8 @@ import {
   type ChatMessage,
   type SavedComparison,
 } from "./store";
+import { accessCode, post, setUnauthorizedHandler } from "./api";
+import { initRfp } from "./rfp";
 import { briefingHtml, esc, feeTable, firmName, notesHtml, scopeTable, type Sourced } from "./table";
 
 // Vercel rejects request bodies over 4.5 MB; locally there's no limit.
@@ -207,14 +210,6 @@ function setStatus(msg: string, isError = false) {
 
 // ---------- API ----------
 
-async function post<T>(url: string, body: BodyInit, headers: Record<string, string>): Promise<T> {
-  const res = await fetch(url, { method: "POST", body, headers: { ...headers, "x-access-code": accessCode() } });
-  if (res.status === 401) showGate();
-  const data = await res.json().catch(() => ({ error: `Server returned ${res.status}` }));
-  if (!res.ok) throw Object.assign(new Error(data.error ?? `Server returned ${res.status}`), { status: res.status });
-  return data as T;
-}
-
 async function extract(e: Entry) {
   e.state = "reading";
   e.started = Date.now();
@@ -283,7 +278,7 @@ runBtn.addEventListener("click", async () => {
       pdf_tokens: e.pdfTokens,
       source_hash: e.hash ?? undefined,
     }));
-    const projectName = projectEl.value.trim() || null;
+    const projectName = null;
     const { comparison: cmp, usage } = await post<{ comparison: Comparison; usage: Usage }>(
       "/api/compare",
       JSON.stringify({ projectName, proposals }),
@@ -296,9 +291,12 @@ runBtn.addEventListener("click", async () => {
     current = { id: crypto.randomUUID(), savedAt: Date.now(), proposals, cmp, projectName, messages: [], costUsd, costPartial: partial };
     resetChat();
     showResults(true);
-    await persist();
+    const saveError = await persist().then(() => "", (err: Error) => ` Not saved: ${err.message}`);
     const failed = entries.length - done.length;
-    setStatus(`Done${failed ? `, ${failed} file(s) skipped` : ""}. This comparison cost ${usd(costUsd)}${partial ? " (some costs unavailable)" : ""}.`);
+    setStatus(
+      `Done${failed ? `, ${failed} file(s) skipped` : ""}. This comparison cost ${usd(costUsd)}${partial ? " (some costs unavailable)" : ""}.${saveError}`,
+      !!saveError,
+    );
   } catch (err) {
     setStatus((err as Error).message, true);
   } finally {
@@ -309,6 +307,14 @@ runBtn.addEventListener("click", async () => {
 });
 
 // ---------- Results ----------
+
+// Optional: file the comparison under a project name (shared with RFP reviews).
+projectEl.addEventListener("focus", () => fillProjectNames());
+projectEl.addEventListener("change", async () => {
+  if (!current) return;
+  current.projectName = projectEl.value.trim() || null;
+  await persist();
+});
 
 const scopeEl = $<HTMLTableElement>("scope");
 const diffOnly = $<HTMLInputElement>("diff-only");
@@ -359,6 +365,7 @@ function showResults(scroll: boolean) {
   scopeEl.classList.toggle("diff-only", diffOnly.checked && !single);
   $("notes").innerHTML = notesHtml(proposals);
   renderCost();
+  projectEl.value = projectName ?? "";
   $("print-meta").textContent = [projectName, new Date().toLocaleDateString()].filter(Boolean).join(" — ");
   results.hidden = false;
   if (scroll) results.scrollIntoView({ behavior: "smooth" });
@@ -535,7 +542,7 @@ async function renderSaved() {
       const firms = s.proposals.map((p) => firmName(p.firm)).join(", ");
       const when = new Date(s.savedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
       return `<li class="${s.id === current?.id ? "active" : ""}">
-        <button class="link open" data-open="${s.id}"><b>${esc(s.projectName ?? "Untitled")}</b> <span>${esc(firms)}</span></button>
+        <button class="link open" data-open="${s.id}"><b>${esc(s.projectName ?? firms)}</b> <span>${s.projectName ? esc(firms) : ""}</span></button>
         <span class="when">${s.costUsd != null ? usd(s.costUsd) + " · " : ""}${esc(when)}</span>
         <button class="link" data-delete="${s.id}">Delete</button>
       </li>`;
@@ -551,7 +558,6 @@ savedList.addEventListener("click", async (e) => {
     const saved = (await listComparisons()).find((s) => s.id === openId);
     if (!saved) return;
     current = saved;
-    projectEl.value = saved.projectName ?? "";
     resetChat();
     showResults(true);
     await renderSaved();
@@ -575,18 +581,11 @@ const gateForm = $<HTMLFormElement>("gate-form");
 const gateInput = $<HTMLInputElement>("gate-input");
 const gateError = $<HTMLSpanElement>("gate-error");
 
-function accessCode(): string {
-  try {
-    return localStorage.getItem("access-code") ?? "";
-  } catch {
-    return gateInput.value;
-  }
-}
-
 function showGate() {
   gate.hidden = false;
   gateInput.focus();
 }
+setUnauthorizedHandler(showGate);
 
 async function codeAccepted(code: string): Promise<boolean> {
   const res = await fetch("/api/auth", { method: "POST", headers: { "x-access-code": code } });
@@ -612,4 +611,19 @@ codeAccepted(accessCode()).then((ok) => {
   if (!ok) showGate();
 });
 
+// ---------- Tabs ----------
+
+const TABS = ["rfp", "proposals", "fee"];
+// The wireframe is local-only (not committed), so only link to it in dev.
+if (import.meta.env.PROD) $("wireframe-link").remove();
+function showTab() {
+  const tab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "rfp";
+  for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
+  document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === tab));
+  if (tab !== "proposals") setChatOpen(false);
+}
+addEventListener("hashchange", showTab);
+showTab();
+
+initRfp();
 render();

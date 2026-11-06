@@ -6,3 +6,7 @@ dist
 
 # Real client proposals used for testing; never commit
 .test_proposals/
+
+# Planning and wireframes; kept local
+wireframes/
+docs/

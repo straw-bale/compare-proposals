@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Proposal Comparison</title>
+    <title>Proposal Workspace</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="gate" class="gate" hidden>
       <form id="gate-form">
-        <span class="mark">Proposal Comparison</span>
+        <span class="mark">Proposal Workspace</span>
         <label class="field">
           <span class="label">Access code</span>
           <input id="gate-input" type="password" autocomplete="current-password" autofocus />
@@ -19,11 +19,41 @@
       </form>
     </div>
     <header class="site">
-      <a class="mark" href="/">Proposal Comparison</a>
-      <span class="meta">Consultant proposals — Scope &amp; Fees</span>
+      <a class="mark" href="/">Proposal Workspace</a>
+      <nav class="tabs">
+        <a href="#rfp" data-tab="rfp">RFP</a>
+        <a href="#proposals" data-tab="proposals">Proposals</a>
+        <a href="#fee" data-tab="fee">Fee</a>
+      </nav>
     </header>
 
     <main>
+      <div id="tab-rfp" class="tab" hidden>
+        <section id="rfp-intake">
+          <p class="lede">Drop in an RFP to see its key dates, critical components and questions to ask.</p>
+          <label id="rfp-drop" class="drop">
+            <input id="rfp-input" type="file" accept="application/pdf,.pdf" multiple hidden />
+            <span>Drop the RFP and any addenda here, or <u>browse</u></span>
+          </label>
+          <ol id="rfp-files" class="files"></ol>
+          <div class="actions">
+            <button id="rfp-run" class="btn primary" disabled>Review</button>
+            <span id="rfp-status" class="status"></span>
+          </div>
+          <p id="rfp-estimate" class="estimate"></p>
+          <div id="rfp-saved" class="saved" hidden>
+            <h2 class="label">Recent RFPs</h2>
+            <ol id="rfp-saved-list"></ol>
+          </div>
+        </section>
+        <section id="rfp-results" hidden></section>
+      </div>
+
+      <div id="tab-fee" class="tab" hidden>
+        <section><p class="lede">Fee estimating is coming next.<span id="wireframe-link"> <a href="/wireframes/index.html">See the wireframe</a>.</span></p></section>
+      </div>
+
+      <div id="tab-proposals" class="tab" hidden>
       <section id="intake">
         <p class="lede">
           Drop in one consultant proposal to get its key facts, or several to
@@ -31,16 +61,6 @@
           are normalized into a single checklist and the fees lined up side by
           side.
         </p>
-
-        <label class="field">
-          <span class="label">Project</span>
-          <input
-            id="project"
-            type="text"
-            placeholder="Project name (optional)"
-            autocomplete="off"
-          />
-        </label>
 
         <label id="drop" class="drop">
           <input
@@ -80,6 +100,7 @@
         </div>
 
         <div class="toolbar">
+          <input id="project" class="project" list="project-names" placeholder="Add to project" autocomplete="off" />
           <label class="toggle"
             ><input id="diff-only" type="checkbox" /> Show differences
             only</label
@@ -117,6 +138,7 @@
           <div id="notes" class="notes"></div>
         </details>
       </section>
+      </div>
     </main>
 
     <aside id="chat" class="chat" hidden>
@@ -142,6 +164,11 @@
       </form>
     </aside>
 
+    <footer class="site">
+      Built on SOC 2 Type II audited services: Anthropic, Supabase and Vercel. Documents aren't used to train AI models, and uploaded PDFs are deleted from Anthropic after a day. AI can make mistakes, so check important details against the original documents.
+    </footer>
+
+    <datalist id="project-names"></datalist>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

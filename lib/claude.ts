@@ -109,6 +109,27 @@ export const ComparisonSchema = z.object({
 });
 export type Comparison = z.infer<typeof ComparisonSchema>;
 
+// An RFP (plus any addenda) read for an architecture firm deciding whether and how to respond.
+export const RfpSchema = z.object({
+  project_name: z.string(),
+  client: z.string(),
+  summary: z.string(),
+  facts: z.array(z.object({ label: z.string(), value: z.string(), page: z.number() })),
+  dates: z.array(
+    z.object({
+      label: z.string(),
+      date: z.string(), // YYYY-MM-DD, or "" if not a specific day
+      when: z.string(), // as written, e.g. "Dec 8, 2:00 PM" or "Spring 2028"
+      mandatory: z.boolean(),
+      page: z.number(),
+    }),
+  ),
+  watch_outs: z.array(z.object({ critical: z.boolean(), title: z.string(), detail: z.string(), page: z.number() })),
+  questions: z.array(z.string()),
+  scoring: z.array(z.object({ criterion: z.string(), weight: z.string() })),
+});
+export type Rfp = z.infer<typeof RfpSchema>;
+
 // What the chat model returns. Corrections come back as JSON text (validated below against the full schemas),
 // because nesting whole proposals/analyses here would exceed the structured-output union-field limit.
 const ChatWireSchema = z.object({
@@ -178,6 +199,20 @@ Corrections:
 - All analysis rules still apply: fee_rows reference fee_items by id, notes contain no figures, and the briefing follows the same accuracy rules.
 - In reply, say plainly what you changed. Leave updated_comparison_json as an empty string and updated_proposals empty when nothing changes.
 - Refer to firms by their short name, never by firm_index. Write in plain, everyday professional language. Leave out legal and contractual boilerplate (e.g. "legal entity", "herein", "pursuant to", "the Consultant shall") and mention contract terms only when they matter to the decision.`;
+
+const RFP_SYSTEM = `You are a senior principal at an architecture firm reviewing a request for proposals (RFP/RFQ) so the team can decide whether to pursue it and respond correctly. You may receive the RFP plus addenda; later addenda override earlier text, so report the current requirement (mention the change briefly where it matters).
+
+Be brief. The reader should take it in within two minutes. Include only what affects the go/no-go decision, the fee, or the schedule.
+
+- project_name, client: short everyday names.
+- summary: 2-3 plain sentences: what is being procured, the scope, and the single biggest consideration.
+- facts: at most 8 short label/value pairs a principal would want first, only when stated: construction budget, building size, delivery method, services requested, fee format, contract form, insurance, page limit, submission format. Values short (a few words).
+- dates: every procurement date (issued, site visit, pre-proposal meeting, questions due, addenda, proposal due, interviews, award) and key project milestones (design start, construction start/finish). date is YYYY-MM-DD when a specific day is given, otherwise "". when is short, as written, including time where given. mandatory is true only when attendance or the deadline is stated as mandatory or disqualifying. Order chronologically.
+- watch_outs: at most 8, most important first. Look for disqualifiers, onerous contract terms (indemnity, duty to defend, liability, IP, payment terms, fee caps), internal inconsistencies (quote both versions with pages), unusually heavy or vague scope (many meetings, long CA, unclear consultant responsibilities), fee constraints, and unrealistic schedules. critical is true only for things that could disqualify the proposal or cost real money. detail is one sentence.
+- questions: at most 6 clarification questions to submit to the client, phrased ready to paste.
+- scoring: evaluation criteria with their weights or points as written (weight "" if not given).
+- page: the page number where it appears; 0 if unknown.
+- Plain, everyday professional language. No legal boilerplate. Never invent details that aren't in the documents.`;
 
 // ---------- Calls ----------
 
@@ -326,7 +361,29 @@ export async function compareProposals(
   return { comparison: msg.parsed_output, usage: usageOf(msg) };
 }
 
-export type ChatTurn = { role: "user" | "assistant"; content: string };
+/** Reads an RFP and its addenda (already uploaded via /api/upload) in one call. */
+export async function reviewRfp(files: { file_id: string; filename: string }[]): Promise<{ rfp: Rfp; usage: Usage }> {
+  const stream = getClient().beta.messages.stream({
+    ...BASE,
+    system: RFP_SYSTEM,
+    output_config: { effort: "high", format: betaZodOutputFormat(RfpSchema) },
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...files.map((f) => ({ type: "document" as const, title: f.filename, source: { type: "file" as const, file_id: f.file_id } })),
+          { type: "text", text: files.length > 1 ? "Review this RFP and its addenda (in the order given)." : "Review this RFP." },
+        ],
+      },
+    ],
+  });
+  const msg = await stream.finalMessage();
+  checkStop(msg);
+  if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's RFP review.", 502);
+  return { rfp: msg.parsed_output, usage: usageOf(msg) };
+}
+
+export type ChatTurn ={ role: "user" | "assistant"; content: string };
 
 export async function chat(
   proposals: (Proposal & { file_id: string; source_file: string })[],

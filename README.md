@@ -1,4 +1,13 @@
-# Proposal Comparison
+# Proposal Workspace
+
+Two tabs:
+
+- **RFP**: drop in an RFP (plus any addenda) to see its summary, key facts, key dates, critical components, questions to ask, and scoring.
+- **Proposals**: review one consultant proposal or compare several (below).
+
+Results can be added to a project (optional). Everything is saved to Supabase when it's configured, otherwise in the browser.
+
+## Proposals
 
 Upload one consultant proposal (PDF) to get its key facts, or several to compare them. It works for any architecture or engineering discipline (MEP, structural, AV, acoustics, lighting, and others). Claude reads each one, then the tool shows:
 
@@ -19,6 +28,13 @@ npm run dev
 ```
 
 Open http://localhost:5173.
+
+## Supabase
+
+1. In the Supabase SQL Editor, run `supabase/schema.sql` once.
+2. Add `SUPABASE_URL` (`https://<project-id>.supabase.co`) and `SUPABASE_SECRET_KEY` (`sb_secret_...`) to `.env.local` and to Vercel's environment variables.
+
+Only the server talks to Supabase; the secret key never reaches the browser. Without these, saving falls back to the browser.
 
 ## Deploy (Vercel)
 
