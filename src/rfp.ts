@@ -132,7 +132,7 @@ async function renderSaved() {
       const due = proposalDue(s.rfp);
       return `<li>
         <button class="link open" data-open="${s.id}"><b>${esc(s.project ?? s.rfp.project_name)}</b> <span>${esc(s.rfp.client)}</span></button>
-        <span class="when">${due ? `Due ${esc(due.when)}` : ""}</span>
+        <span class="when">${due ? `Due ${esc(formatWhen(due))}` : ""}</span>
         <button class="link" data-delete="${s.id}">Delete</button>
       </li>`;
     })
@@ -163,12 +163,26 @@ const parseDay = (s: string) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
 };
-const daysUntil = (d: Date) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - today.getTime()) / 86_400_000);
-};
-const inDays = (n: number) => (n === 0 ? "today" : n === 1 ? "tomorrow" : n > 0 ? `in ${n} days` : "");
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * One display format for every date, whatever the RFP's wording: "Jul 12, 2023, 9:30 AM" for a specific day
+ * (time kept when stated), "Sep 2023" for a month, and the original words otherwise ("After proposals, date TBD").
+ */
+function formatWhen(d: { date: string; when: string }): string {
+  const day = parseDay(d.date);
+  if (day) {
+    const t = /(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m\b\.?/i.exec(d.when) ?? /\b(noon)\b/i.exec(d.when);
+    const time = !t ? "" : t[1].toLowerCase() === "noon" ? "12:00 PM" : `${+t[1]}:${t[2] ?? "00"} ${t[3].toUpperCase()}M`;
+    return `${MONTHS[day.getMonth()]} ${day.getDate()}, ${day.getFullYear()}${time ? `, ${time}` : ""}`;
+  }
+  const m = /^\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(\d{4})\s*$/i.exec(d.when);
+  if (m) return `${m[1][0].toUpperCase()}${m[1].slice(1, 3).toLowerCase()} ${m[2]}`;
+  const ym = /^\s*(\d{1,2})\/(\d{4})\s*$/.exec(d.when);
+  if (ym && +ym[1] >= 1 && +ym[1] <= 12) return `${MONTHS[+ym[1] - 1]} ${ym[2]}`;
+  return d.when;
+}
+
 
 function proposalDue(rfp: Rfp) {
   return rfp.dates.find((d) => /proposal|submission|submittal|response|qualifications/i.test(d.label) && /due|deadline|submi/i.test(d.label));
@@ -180,17 +194,12 @@ function showResults() {
   if (!current) return;
   const { rfp } = current;
   const due = proposalDue(rfp);
-  const dueDay = due && parseDay(due.date);
-  const dueIn = dueDay ? daysUntil(dueDay) : null;
 
   const dates = rfp.dates
     .map((d) => {
-      const day = parseDay(d.date);
-      const n = day ? daysUntil(day) : null;
       return `<tr>
-        <td class="when">${esc(d.when)}</td>
+        <td class="when">${esc(formatWhen(d))}</td>
         <td>${esc(d.label)}${d.mandatory ? ' <span class="must">Mandatory</span>' : ""}</td>
-        <td class="in">${n == null ? "" : n < 0 ? '<span class="must">Already passed?</span>' : inDays(n)}</td>
       </tr>`;
     })
     .join("");
@@ -203,7 +212,7 @@ function showResults() {
     </div>
     <h1 class="headline">${esc(rfp.project_name)}</h1>
     <p class="rfp-sub">${esc(rfp.client)}${
-      due ? ` · <span class="${dueIn != null && dueIn >= 0 && dueIn <= 14 ? "flag" : ""}">Due ${esc(due.when)}${dueIn != null && dueIn >= 0 ? `, ${inDays(dueIn)}` : ""}</span>` : ""
+      due ? ` · Due ${esc(formatWhen(due))}` : ""
     }</p>
     <p class="overview">${esc(rfp.summary)}</p>
 
