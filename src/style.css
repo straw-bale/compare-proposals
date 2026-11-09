@@ -115,7 +115,7 @@ section { padding-top: 40px; }
 
 /* Results */
 #results { border-top: 1px solid var(--ink); margin-top: 56px; }
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 32px; }
+.toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 32px; }
 .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .block { margin-bottom: 56px; }
 /* Briefing */
@@ -190,7 +190,7 @@ table.diff-only tr.same { display: none; }
 .notes li { margin-bottom: 3px; }
 
 /* Chat panel */
-.tools { display: flex; gap: 8px; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; }
 .link { border: 0; background: none; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; padding: 0; }
 .link { text-decoration: underline; text-underline-offset: 2px; }
 .link.open { text-decoration: none; }
@@ -242,15 +242,28 @@ body.chat-open main, body.chat-open footer.site { margin-right: 420px; }
   .headline { font-size: 20px; }
   .flags, .questions { grid-template-columns: 1fr; }
   .scroll table.grid { min-width: var(--min-table, 0px); }
+  /* Name on its own line, the four tabs below it, so the header never scrolls sideways. */
+  header.site { flex-wrap: wrap; gap: 12px; }
+  .mark { flex-basis: 100%; }
+  nav.tabs { flex-wrap: wrap; gap: 10px 20px; }
+  /* Saved lists: let long names wrap instead of cutting them off. */
+  .saved .open { white-space: normal; }
+  /* Review / project top bar: back link and buttons on one row, the project name on its own row below. */
 }
 
 /* Confirm dialog */
-dialog.modal { border: 1px solid var(--ink); padding: 24px; max-width: 420px; width: calc(100% - 32px); }
+dialog.modal { border: 1px solid var(--ink); padding: 24px; max-width: 420px; width: calc(100% - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; }
 dialog.modal::backdrop { background: rgba(17, 17, 17, .35); }
 dialog.modal h2 { font-size: 18px; font-weight: 500; margin: 0 0 8px; }
 dialog.modal p { margin: 0 0 20px; color: var(--ink); font-size: 14px; }
 .modal-field { display: block; margin: 0 0 20px; font-size: 14px; }
 .modal-field span { display: block; margin-bottom: 6px; }
+.modal-options { border: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
+.modal-options legend { padding: 0; margin-bottom: 6px; }
+.modal-options label { display: flex; align-items: center; gap: 6px; font-size: 14px; min-width: 0; overflow-wrap: break-word; }
+@media (max-width: 400px) { dialog.modal { padding: 18px 16px; } .modal-options { gap: 6px 10px; } }
+@media (max-width: 400px) { .modal-options { grid-template-columns: 1fr; } }
+.modal-options label input { width: auto; }
 .modal-field input { width: 100%; font: inherit; font-size: 15px; padding: 8px; border: 1px solid var(--ink); outline: none; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .btn.primary.danger { background: var(--bad); border-color: var(--bad); }
@@ -275,16 +288,59 @@ select.project { font: inherit; font-size: 14px; padding: 4px 6px; border: 1px s
 select.project:focus { border-color: var(--ink); outline: none; }
 .rfp-top .project-name { margin-right: auto; margin-left: 32px; font-size: 14px; }
 .rfp-top .project-name b { font-weight: 600; }
+@media (max-width: 640px) {
+  /* Back link and buttons on one row, the project name on its own row below. */
+  .rfp-top { flex-wrap: wrap; gap: 12px; }
+  .rfp-top .project-name { order: 3; flex-basis: 100%; margin: 0; }
+}
 
 /* Project page */
 #project-page { max-width: 960px; }
 #project-page .block.saved, .project-list { margin-top: 0; }
 #project-page .actions { margin-top: 16px; }
 .coverage { margin-bottom: 24px; }
-.coverage td.cv { width: 90px; font-weight: 600; }
-.coverage .cv-missing td.cv { color: var(--bad); }
+.coverage .cv { font-weight: 600; }
+.coverage .cv-missing .cv { color: var(--bad); }
 .intake-project { font-size: 14px; margin: 16px 0 0; }
 .intake-project .link { margin-left: 8px; font-size: 13px; }
+
+/* Consultants: filter, then firms as cards grouped by discipline */
+#consultants-page .filter { width: 100%; font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid var(--ink); background: var(--bg); color: var(--ink); outline: none; }
+.consultants-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+h2.group { font-size: 20px; font-weight: 700; margin: 40px 0 20px; padding-bottom: 8px; border-bottom: 1.5px solid var(--ink); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 20px; }
+.card { border: 1.5px solid var(--ink); padding: 18px; display: flex; flex-direction: column; font-size: 13px; }
+.card h3 { font-size: 16px; font-weight: 700; text-align: center; margin: 0 0 10px; }
+.card .disc { text-align: center; margin: 0 0 14px; padding-bottom: 14px; border-bottom: 1px solid var(--ink); font-size: 13px; }
+.card-body p { margin: 0 0 6px; overflow-wrap: anywhere; }
+.card-body b { font-weight: 700; }
+.card-body .contact { display: block; margin-top: 4px; }
+.card-body .contact + .contact { margin-top: 8px; }
+.modal-contacts { border: 0; padding: 0; }
+.modal-contacts legend { padding: 0; margin-bottom: 6px; }
+.contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--rule); }
+.contact-row input { width: 100%; font: inherit; font-size: 14px; padding: 7px 8px; border: 1px solid var(--rule); outline: none; }
+.contact-row input:focus { border-color: var(--ink); }
+.contact-row [data-c="email"], .contact-row [data-c="phone"] { grid-column: 1 / -1; }
+.contact-row [data-remove-contact] { grid-column: 1 / -1; justify-self: start; font-size: 13px; }
+.copy-email {
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: -3px;
+  width: 20px; height: 20px; margin-left: 3px; padding: 0; border: 0; border-radius: 4px;
+  background: none; color: var(--ink); cursor: pointer; opacity: .55;
+}
+.copy-email:hover, .copy-email:focus-visible { opacity: 1; background: var(--soft); }
+.card-actions { margin-top: auto; padding-top: 10px; display: flex; gap: 12px; font-size: 13px; }
+
+.team td .note { font-family: var(--mono); font-size: 10px; text-transform: uppercase; margin-left: 4px; }
+.team td .link { font-size: inherit; }
+.team td button.link { margin-left: 8px; font-size: 13px; }
+.team .needed { color: var(--bad); font-weight: 600; }
+
+/* Open calls: calls, then the sources they come from (same cards as consultants, left-aligned) */
+#calls-page h2.group:first-child { margin-top: 0; }
+.cards.sources { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.card.call h3, .card.source h3 { text-align: left; margin-bottom: 8px; }
+.call-issuer, .source-code { margin: 0 0 6px; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 
 /* RFP review */
 #rfp-intake { max-width: 960px; }
@@ -314,6 +370,10 @@ mark { padding: 0 3px; }
 .q-add { display: flex; gap: 8px; margin-top: 12px; }
 .q-add input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--rule); background: var(--bg); color: var(--ink); outline: none; }
 .q-add input:focus { border-color: var(--ink); }
+.services th[scope="row"] { width: 40%; }
+.services td.req { width: 26%; }
+.services .req-yes td.req { font-weight: 700; }
+.services .req-unclear td.req { color: var(--bad); font-weight: 600; }
 .label .link { margin-left: 8px; font-size: 13px; font-weight: 400; }
 .facts th[scope="row"] { width: 45%; }
 .facts td.num { text-align: right; padding-right: 0; }

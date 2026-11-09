@@ -2,6 +2,7 @@ import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { costOf, type Usage } from "./cost.js";
+import { DISCIPLINES } from "./disciplines.js";
 
 export const MODEL = "claude-opus-5-5";
 
@@ -137,8 +138,8 @@ export const RfpSchema = z.object({
       ),
     ) as Record<RfpFactKey, z.ZodObject<{ value: z.ZodString; page: z.ZodNumber }>>,
   ),
-  // One row per discipline the design team is asked to provide, so the team can see which consultants it needs.
-  services: z.array(z.object({ discipline: z.string(), detail: z.string(), page: z.number() })),
+  // Every discipline on the governing list, each marked requested or not, so the team can see which consultants it needs.
+  services: z.array(z.object({ discipline: z.enum(DISCIPLINES), requested: z.enum(["yes", "no", "unclear"]), detail: z.string(), page: z.number() })),
   dates: z.array(
     z.object({
       label: z.string(),
@@ -255,10 +256,10 @@ Be brief. The reader should take it in within two minutes. Include only what aff
 - project_name, client: short everyday names.
 - summary: 2-3 plain sentences: what is being procured, the scope, and the single biggest consideration.
 - facts: fill every field from the RFP, a few words each; value "" when the RFP doesn't say. location (city/site), building_size (area, floors), construction_budget, delivery_method, phases (the design phases the team is asked to provide, e.g. "SD through CA"), fee_format (how fees must be submitted), contract (form or type of agreement), insurance (required coverage), page_limit, submission (format, copies, where to send), contact (procurement contact name and email).
-- services: one entry per discipline or specialty the design team is asked to provide, so the firm can see which consultants it needs (e.g. Architecture, Structural, Mechanical, Electrical, Plumbing, Fire protection, Civil, Landscape, Lab planning, Hazardous materials abatement specs, Cost estimating). Split combined terms like "MEP" into separate disciplines. discipline is the plain name; detail is a few words on its extent only when it differs from the overall phases or is limited (e.g. "Specs only", "Survey by owner"), otherwise "". List only what the RFP asks for; never add disciplines it doesn't mention.
+- services: the disciplines requested. Exactly one entry for each discipline on the firm's list, in this order: ${DISCIPLINES.join(", ")}. These are disciplines, not tasks: tasks such as programming, code analysis, energy compliance, controls or commissioning belong to the discipline that does them and don't get entries of their own. requested: "yes" when the RFP asks the design team to provide it (directly or through a subconsultant; "MEP" means Mechanical, Electrical and Plumbing); "no" when the RFP doesn't ask for it, or says the owner or someone else provides it; "unclear" only when the RFP is genuinely ambiguous. detail: a few words when useful (e.g. "Specs only", "Survey by owner", "Owner's separate contract", or why it's unclear), otherwise "". page: where the RFP says so, 0 if nowhere.
 - dates: every procurement date (issued, site visit, pre-proposal meeting, questions due, addenda, proposal due, interviews, award) and key project milestones (design start, construction start/finish). date is YYYY-MM-DD when a specific day is given, otherwise "". when is short and in one consistent format: "Jul 12, 2023, 9:30 AM" for a specific day (time only if stated), "Sep 2023" for a month, otherwise a few plain words (e.g. "Spring 2028", "After interviews, TBD"). mandatory is true only for a pre-bid / pre-proposal meeting, conference, site visit or walk-through whose attendance the RFP states is mandatory or required to submit; it is false for every other date, including the proposal due date and other deadlines. Order chronologically.
 - watch_outs: at most 8, most important first. Look for disqualifiers, onerous contract terms (indemnity, duty to defend, liability, IP, payment terms, fee caps), internal inconsistencies (quote both versions with pages), unusually heavy or vague scope (many meetings, long CA, unclear consultant responsibilities), fee constraints, and unrealistic schedules. critical is true only for things that could disqualify the proposal or cost real money. detail is one sentence.
-- Always fill every section the same way: services, dates, watch_outs, questions and scoring are empty lists only when the RFP truly has nothing for them.\n- questions: at most 6 clarification questions to submit to the client, phrased ready to paste.
+- Always fill every section the same way: services always has every discipline on the list; dates, watch_outs, questions and scoring are empty lists only when the RFP truly has nothing for them.\n- questions: at most 6 clarification questions to submit to the client, phrased ready to paste.
 - scoring: evaluation criteria with their weights or points as written (weight "" if not given).
 - page: the page number where it appears; 0 if unknown.
 - Plain, everyday professional language. No legal boilerplate. Never invent details that aren't in the documents.`;

@@ -16,6 +16,8 @@ import {
 import { accessCode, post, setUnauthorizedHandler } from "./api";
 import { confirmDelete, noticeModal } from "./modal";
 import { getCurrentRfp, initRfp, openRfp } from "./rfp";
+import { showCalls } from "./calls";
+import { showConsultants } from "./consultants";
 import { clearPendingProject, initProject, openProject, pendingProject, showProjectList } from "./project";
 import { setPrintName } from "./print";
 import { copyShareLink, parseHash } from "./share";
@@ -655,7 +657,7 @@ codeAccepted(accessCode()).then(
 
 // Default PDF name: the open RFP review or comparison on the visible tab.
 setPrintName(() => {
-  const tab = parseHash().tab || "rfp";
+  const tab = parseHash().tab || "project";
   if (tab === "rfp") {
     const r = getCurrentRfp();
     return r && { kind: "RFP Review", name: r.project || r.rfp.project_name };
@@ -678,12 +680,10 @@ function start() {
 
 // ---------- Tabs ----------
 
-const TABS = ["rfp", "proposals", "fee", "project"];
-// The wireframe is local-only (not committed), so only link to it in dev.
-if (import.meta.env.PROD) $("wireframe-link").remove();
+const TABS = ["rfp", "proposals", "fee", "project", "consultants", "schedule", "calls"];
 function showTab() {
   const { tab: t, id } = parseHash();
-  const tab = TABS.includes(t) ? t : "rfp";
+  const tab = TABS.includes(t) ? t : "project";
   for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
   document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === tab));
   if (tab === "proposals") showIntakeProject();
@@ -691,6 +691,8 @@ function showTab() {
   // A shared link (#rfp/<id> or #proposals/<id>) opens that item once the access code has been accepted.
   if (id && started) tab === "rfp" ? openRfp(id) : tab === "proposals" ? openComparison(id) : tab === "project" && openProject(id);
   if (!id && tab === "project" && started) showProjectList();
+  if (tab === "consultants" && started) showConsultants();
+  if (tab === "calls" && started) showCalls();
 }
 
 /** On the intake, names the project the next comparison will be linked to (when started from a project page). */
@@ -740,7 +742,7 @@ feedbackForm.addEventListener("submit", async (e) => {
   feedbackStatus.classList.remove("error");
   feedbackStatus.textContent = "Sending…";
   try {
-    await post("/api/feedback", JSON.stringify({ message, tab: location.hash.slice(1) || "rfp" }), { "content-type": "application/json" });
+    await post("/api/feedback", JSON.stringify({ message, tab: location.hash.slice(1) || "project" }), { "content-type": "application/json" });
     feedbackInput.value = "";
     feedbackStatus.textContent = "Thanks!";
     setTimeout(() => setFeedbackOpen(false), 1200);

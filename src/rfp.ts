@@ -1,8 +1,9 @@
 import { RFP_FACTS, type Rfp, type RfpFactKey } from "../lib/claude";
+import { DISCIPLINES, toDisciplines, type Discipline } from "../lib/disciplines";
 import { estimateRfp, usd, usdRange, type Usage } from "../lib/cost";
 import { post, postPdf } from "./api";
-import { askProjectName, deleteRfp, listRfps, projectLabel, saveProject, saveRfp, savesShared, type SavedProject, type SavedRfp } from "./store";
-import { confirmDelete, confirmModal, noticeModal } from "./modal";
+import { deleteRfp, listRfps, projectLabel, saveProject, saveRfp, savesShared, type SavedProject, type SavedRfp } from "./store";
+import { askProjectName, confirmDelete, confirmModal, noticeModal } from "./modal";
 import { copyShareLink } from "./share";
 import { esc } from "./table";
 
@@ -178,7 +179,7 @@ async function onSavedClick(e: Event) {
 // ---------- Results ----------
 
 /** Local-midnight date for "YYYY-MM-DD", or null. */
-const parseDay = (s: string) => {
+export const parseDay = (s: string) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
 };
@@ -188,7 +189,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * One display format for every date, whatever the RFP's wording: "Jul 12, 2023, 9:30 AM" for a specific day
  * (time kept when stated), "Sep 2023" for a month, and the original words otherwise ("After proposals, date TBD").
  */
-function formatWhen(d: { date: string; when: string }): string {
+export function formatWhen(d: { date: string; when: string }): string {
   const day = parseDay(d.date);
   if (day) {
     const t = /(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m\b\.?/i.exec(d.when) ?? /\b(noon)\b/i.exec(d.when);
@@ -203,7 +204,7 @@ function formatWhen(d: { date: string; when: string }): string {
 }
 
 
-function proposalDue(rfp: Rfp) {
+export function proposalDue(rfp: Rfp) {
   return rfp.dates.find((d) => /proposal|submission|submittal|response|qualifications/i.test(d.label) && /due|deadline|submi/i.test(d.label));
 }
 
@@ -289,18 +290,41 @@ function showResults() {
 const section = (title: string, body: string, count: number, empty = "Not stated in the RFP.") =>
   `<div class="block"><h2 class="label">${title}</h2>${count ? body : `<p class="none">${empty}</p>`}</div>`;
 
-/** Services requested, one discipline per row. Reviews saved before the list show their one-line summary. */
+export type ServiceRow = { discipline: Discipline; requested: "yes" | "no" | "unclear" | "unknown"; detail: string; page: number };
+
+/**
+ * Every governing discipline with whether the RFP requests it. Reads reviews in every saved shape: the current
+ * matrix; the earlier free-text list (listed = yes, the rest = no); and the oldest one-line summary (matches = yes,
+ * the rest unknown). Anything that isn't a governing discipline is left out.
+ */
+export function servicesMatrix(rfp: Rfp): ServiceRow[] {
+  type Saved = { discipline: string; detail: string; page: number; requested?: string };
+  const list = (rfp as { services?: Saved[] }).services;
+  const byName = new Map<Discipline, ServiceRow>();
+  let rest: ServiceRow["requested"] = "unknown";
+  if (Array.isArray(list) && list.some((s) => s.requested)) {
+    for (const s of list) if ((DISCIPLINES as readonly string[]).includes(s.discipline)) byName.set(s.discipline as Discipline, s as ServiceRow);
+  } else if (Array.isArray(list)) {
+    rest = "no";
+    for (const s of list) for (const d of toDisciplines([s.discipline])) byName.set(d, { discipline: d, requested: "yes", detail: s.detail, page: s.page });
+  } else {
+    const old = (rfp.facts as Partial<Record<string, { value: string; page: number }>>).services;
+    for (const d of toDisciplines((old?.value ?? "").split(/[,;]/))) byName.set(d, { discipline: d, requested: "yes", detail: "", page: old?.page ?? 0 });
+  }
+  return DISCIPLINES.map((d) => byName.get(d) ?? { discipline: d, requested: rest, detail: "", page: 0 });
+}
+
+const REQUESTED = { yes: "Requested", no: "Not requested", unclear: "Unclear", unknown: "Not stated" } as const;
+
+/** Disciplines requested: every governing discipline, marked requested or not. */
 function servicesBlock(rfp: Rfp): string {
-  if (Array.isArray(rfp.services))
-    return section(
-      "Services requested",
-      `<table class="grid facts">${rfp.services
-        .map((s) => `<tr><th scope="row">${esc(s.discipline)}${pg(s.page)}</th><td>${esc(s.detail)}</td></tr>`)
-        .join("")}</table>`,
-      rfp.services.length,
-    );
-  const old = (rfp.facts as Partial<Record<string, { value: string; page: number }>>).services;
-  return section("Services requested", `<p class="none">${esc(old?.value ?? "")}${pg(old?.page ?? 0)}</p>`, old?.value ? 1 : 0);
+  const rows = servicesMatrix(rfp)
+    .map(
+      (r) =>
+        `<tr class="req-${r.requested}"><th scope="row">${esc(r.discipline)}</th><td class="req">${REQUESTED[r.requested]}</td><td>${esc(r.detail)}${pg(r.page)}</td></tr>`,
+    )
+    .join("");
+  return section("Disciplines requested", `<table class="grid services">${rows}</table>`, 1);
 }
 
 /** Key facts in a fixed order. Reviews saved before the fixed list keep their own label/value pairs. */

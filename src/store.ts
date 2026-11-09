@@ -1,4 +1,5 @@
 import type { Comparison, ProjectCheck, Proposal, Rfp } from "../lib/claude";
+import type { Contact } from "./contacts";
 import type { Sourced } from "./table";
 import { accessCode } from "./api";
 
@@ -43,6 +44,26 @@ const STORE = "comparisons";
 const READINGS = "readings";
 const RFPS = "rfps";
 const PROJECTS = "projects";
+const CONSULTANTS = "consultants";
+
+/** A consultant firm in the directory. Firms from proposals that aren't saved are listed from the proposals. */
+export type SavedConsultant = {
+  id: string;
+  savedAt: number;
+  name: string;
+  /** from the governing discipline list */
+  disciplines: string[];
+  /** anything else they do (Acoustics, Lighting, ...) */
+  specialties?: string[];
+  location?: string;
+  contacts?: Contact[];
+  /** contacts saved before they had separate fields ("Name (Role), email, phone; next person…") */
+  contact?: string;
+  website?: string;
+  certifications?: string;
+  notes?: string;
+  source: "manual" | "list";
+};
 
 /** A project ties an RFP review and its comparisons together (they store its id as projectId). */
 export type SavedProject = {
@@ -52,19 +73,22 @@ export type SavedProject = {
   /** The firm's own project number, optional; shown before the name. */
   number?: string;
   rfpId?: string;
+  /** Consultants added to the project by hand (firms whose proposals are linked are shown from the proposals). */
+  consultants?: { name: string; disciplines: string[] }[];
   /** The last check of its proposals against the RFP. firms[i] names firm_index i; comparisonIds are what was checked. */
   check?: ProjectCheck & { firms: string[]; comparisonIds: string[]; checkedAt: number; costUsd: number | null };
 };
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 4);
+    const req = indexedDB.open(DB, 5);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
       if (!db.objectStoreNames.contains(READINGS)) db.createObjectStore(READINGS, { keyPath: "hash" });
       if (!db.objectStoreNames.contains(RFPS)) db.createObjectStore(RFPS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(CONSULTANTS)) db.createObjectStore(CONSULTANTS, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -84,8 +108,8 @@ async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
 // Supabase (through /api/db, so the key stays on the server) when it's configured; otherwise this browser's
 // IndexedDB. The server answers 503 when Supabase isn't set up, and the app then stays local for the session.
 
-type Kind = "comparisons" | "rfps" | "readings" | "projects";
-const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS, projects: PROJECTS };
+type Kind = "comparisons" | "rfps" | "readings" | "projects" | "consultants";
+const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS, projects: PROJECTS, consultants: CONSULTANTS };
 let local = false;
 /** False once the app has fallen back to this browser's storage (Supabase not configured). */
 export const savesShared = () => !local;
@@ -146,23 +170,13 @@ export const deleteRfp = (id: string) => deleteRecord("rfps", id);
 /** "24-017 Gas Dynamics Lab", or just the name when there's no number. Reviews and comparisons show this. */
 export const projectLabel = (p: SavedProject) => (p.number ? `${p.number} ${p.name}` : p.name);
 
-/** Asks for a project's number and name. Resolves null on cancel. */
-export async function askProjectName(title: string, confirm: string, p: { number?: string; name: string }) {
-  const { formModal } = await import("./modal");
-  const values = await formModal({
-    title,
-    fields: [
-      { label: "Project number", value: p.number ?? "", placeholder: "Optional" },
-      { label: "Project name", value: p.name, required: true },
-    ],
-    confirm,
-  });
-  return values && { number: values[0] || undefined, name: values[1] };
-}
 
 export const saveProject = (p: SavedProject) => saveRecord("projects", p);
 export const listProjects = () => listRecords<SavedProject>("projects");
 export const deleteProject = (id: string) => deleteRecord("projects", id);
+export const saveConsultant = (c: SavedConsultant) => saveRecord("consultants", c);
+export const listConsultants = () => listRecords<SavedConsultant>("consultants");
+export const deleteConsultant = (id: string) => deleteRecord("consultants", id);
 export const saveReading = (r: SavedReading) => saveRecord("readings", r).catch(console.error);
 
 export async function getReading(hash: string): Promise<SavedReading | undefined> {

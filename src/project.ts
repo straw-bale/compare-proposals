@@ -1,19 +1,17 @@
-import type { ProjectCheck, Proposal } from "../lib/claude";
-import { estimateCheck, usd, usdRange, type Usage } from "../lib/cost";
-import { post } from "./api";
-import { confirmModal, confirmTyped, noticeModal } from "./modal";
-import { askProjectName, deleteProject, projectLabel, listComparisons, listProjects, savesShared, listRfps, saveComparison, saveProject, saveRfp, type SavedComparison, type SavedProject, type SavedRfp } from "./store";
+import { DISCIPLINES, toDisciplines } from "../lib/disciplines";
+import { askProjectName, confirmModal, confirmTyped, formModal, noticeModal } from "./modal";
+import { deleteProject, projectLabel, listComparisons, listConsultants, listProjects, savesShared, listRfps, saveComparison, saveProject, saveRfp, type SavedComparison, type SavedProject, type SavedRfp } from "./store";
+import { formatWhen, parseDay, proposalDue, servicesMatrix } from "./rfp";
 import { copyShareLink } from "./share";
 import { esc, firmName } from "./table";
 
-// A project page: its RFP review, the comparisons linked to it, and a check of those proposals against the RFP.
+// A project page: its RFP review, the comparisons linked to it, and its consultants by discipline.
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 let project: SavedProject | null = null;
 let rfp: SavedRfp | undefined;
 let comparisons: SavedComparison[] = [];
-let checking = false;
 
 // "Compare proposals" on a project page: the next comparison is linked to this project.
 let pending: { id: string; name: string } | null = null;
@@ -41,32 +39,25 @@ async function load() {
   comparisons = cmps.filter((c) => c.projectId === id);
 }
 
-/** Every proposal across the linked comparisons, once each (the same PDF can be in several comparisons). */
-function proposalsOf(cmps: SavedComparison[]): Proposal[] {
-  const seen = new Set<string>();
-  const out: Proposal[] = [];
-  for (const c of cmps)
-    for (const p of c.proposals) {
-      const key = p.source_hash ?? `${p.firm}|${p.source_file}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const { source_file, file_id, pdf_tokens, source_hash, ...data } = p;
-      out.push(data);
-    }
-  return out;
-}
 
 /** All projects, newest first, each opening its page. */
 export async function showProjectList() {
   project = null;
   const [projects, rfps] = await Promise.all([listProjects(), listRfps()]);
-  const items = projects
-    .sort((a, b) => b.savedAt - a.savedAt)
-    .map((p) => {
-      const r = rfps.find((x) => x.id === p.rfpId);
+  // Sorted by proposal due date: upcoming soonest first, then past ones (most recent first), then those without one.
+  const today = new Date().setHours(0, 0, 0, 0);
+  const rows = projects.map((p) => {
+    const r = rfps.find((x) => x.id === p.rfpId) ?? rfps.find((x) => x.projectId === p.id);
+    const due = r ? proposalDue(r.rfp) : undefined;
+    return { p, r, due, t: due ? parseDay(due.date)?.getTime() : undefined };
+  });
+  const rank = (t?: number) => (t == null ? 2 : t >= today ? 0 : 1);
+  rows.sort((a, b) => rank(a.t) - rank(b.t) || (rank(a.t) === 0 ? a.t! - b.t! : rank(a.t) === 1 ? b.t! - a.t! : b.p.savedAt - a.p.savedAt));
+  const items = rows
+    .map(({ p, r, due }) => {
       return `<li>
         <a class="link open" href="#project/${encodeURIComponent(p.id)}"><b>${esc(projectLabel(p))}</b> <span>${esc(r?.rfp.client ?? "")}</span></a>
-        <span class="when">${esc(day(p.savedAt))}</span>
+        <span class="when">${due ? `Due ${esc(formatWhen(due))}` : ""}</span>
         <button class="link" data-delete-project="${esc(p.id)}">Delete</button>
       </li>`;
     })
@@ -81,7 +72,6 @@ const day = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "s
 function render() {
   if (!project) return;
   const p = project;
-  const proposals = proposalsOf(comparisons);
   const cmpList = comparisons
     .map(
       (c) => `<li>
@@ -92,9 +82,6 @@ function render() {
     )
     .join("");
 
-  const canCheck = !!rfp && proposals.length > 0;
-  const stale = p.check && (p.check.comparisonIds.join() !== comparisons.map((c) => c.id).sort().join());
-  const est = canCheck ? usdRange(estimateCheck(proposals.length)) : "";
 
   $("project-page").innerHTML = `
     <div class="rfp-top">
@@ -115,63 +102,70 @@ function render() {
     </div>
 
     <div class="block">
-      <h2 class="label">Check against RFP</h2>
-      ${p.check ? checkHtml(p.check) : `<p class="none">${canCheck ? "Finds requested services no proposal covers, and proposals that don't match the RFP." : rfp ? "Add proposals to check them against the RFP." : "Link an RFP review to check proposals against it."}</p>`}
-      <div class="actions">
-        <button class="btn primary" data-check ${canCheck && !checking ? "" : "disabled"}>${checking ? "Checking…" : p.check ? "Check again" : "Check"}</button>
-        <span class="status" id="project-status">${p.check && !checking ? `Checked ${esc(day(p.check.checkedAt))}${p.check.costUsd != null ? ` · ${usd(p.check.costUsd)}` : ""}${stale ? " · proposals have changed since" : ""}` : ""}</span>
-      </div>
-      ${canCheck && !checking ? `<p class="estimate">Estimated cost ${est}</p>` : ""}
+      <h2 class="label">Consultants</h2>
+      ${consultantsHtml(p)}
+      <div class="actions"><button class="btn" data-add-consultant>Add consultant</button></div>
     </div>`;
 }
 
-const COVER = { covered: "Covered", partial: "Partial", missing: "Missing", in_house: "In-house" } as const;
-const LEVEL = { high: "Act", medium: "Clarify", low: "Note" } as const;
-
-function checkHtml(c: NonNullable<SavedProject["check"]>): string {
-  const names = (ix: number[]) => ix.map((i) => c.firms[i]).filter(Boolean).map(firmName).join(", ");
-  const rows = c.coverage
-    .map(
-      (r) => `<tr class="cv-${r.status}"><th scope="row">${esc(r.discipline)}</th><td class="cv">${COVER[r.status]}</td><td>${esc(names(r.firm_indexes))}${r.note ? `${r.firm_indexes.length ? " · " : ""}${esc(r.note)}` : ""}</td></tr>`,
-    )
-    .join("");
-  const issues = c.issues
-    .map(
-      (f) => `<li class="lv-${f.level}"><span class="lv">${LEVEL[f.level]}</span><div><b>${esc(f.title)}</b>${
-        f.firm_indexes.length ? ` <span class="who">${esc(names(f.firm_indexes))}</span>` : ""
-      }<p>${esc(f.detail)}</p></div></li>`,
-    )
-    .join("");
-  return `<p class="overview">${esc(c.summary)}</p>
-    ${rows ? `<table class="grid facts coverage">${rows}</table>` : ""}
-    ${issues ? `<h3 class="label">Issues</h3><ol class="flags">${issues}</ol>` : ""}`;
+/**
+ * The project's disciplines in governing-list order: those the RFP asks for, plus any a consultant on the project
+ * covers. Each lists the firms covering it: from linked proposals, and added by hand (removable).
+ */
+function consultantsHtml(p: SavedProject): string {
+  const requested = new Set(rfp ? requestedDisciplines(rfp) : []);
+  const rows = DISCIPLINES.map((d) => {
+    const fromProposals = new Map<string, string>(); // firm → comparison id
+    for (const c of comparisons)
+      for (const x of c.proposals) if (x.firm && toDisciplines(x.disciplines ?? []).includes(d)) fromProposals.set(firmName(x.firm), c.id);
+    const added = (p.consultants ?? []).map((c, i) => ({ ...c, i })).filter((c) => c.disciplines.includes(d));
+    return { d, fromProposals, added, needed: requested.has(d) };
+  }).filter((r) => r.needed || r.fromProposals.size || r.added.length);
+  if (!rows.length) return `<p class="none">${rfp ? "The RFP review doesn't list any of the standard disciplines yet." : "No RFP review or consultants yet."}</p>`;
+  return `<table class="grid facts team">${rows
+    .map((r) => {
+      const firms = [
+        ...[...r.fromProposals].map(([firm, id]) => `<a class="link" href="#proposals/${encodeURIComponent(id)}">${esc(firm)}</a> <span class="note">proposal</span>`),
+        ...r.added.map((c) => `${esc(c.name)} <button class="link" data-remove-consultant="${c.i}" aria-label="Remove ${esc(c.name)}">Remove</button>`),
+      ];
+      return `<tr><th scope="row">${esc(r.d)}</th><td>${firms.length ? firms.join("<br />") : `<span class="needed">Needed</span>`}</td></tr>`;
+    })
+    .join("")}</table>`;
 }
 
-async function check() {
-  if (!project || !rfp || checking) return;
+/** Governing disciplines the RFP requests. */
+const requestedDisciplines = (r: SavedRfp) => servicesMatrix(r.rfp).filter((x) => x.requested === "yes").map((x) => x.discipline);
+
+/** Adds a firm from the directory (or a new name) to the project for the disciplines ticked. */
+async function addConsultant() {
+  if (!project) return;
   const p = project;
-  const proposals = proposalsOf(comparisons);
-  if (!proposals.length) return;
-  checking = true;
+  const directory = await listConsultants();
+  const values = await formModal({
+    title: "Add consultant",
+    fields: [
+      { label: "Firm", value: "", required: true, placeholder: "Start typing a firm from the directory", suggestions: directory.map((c) => c.name).sort() },
+      { label: "Disciplines on this project", value: "", required: true, options: DISCIPLINES },
+    ],
+    confirm: "Add",
+  });
+  if (!values) return;
+  const [name, picked] = values;
+  const disciplines = toDisciplines(picked.split("\n"));
+  const list = p.consultants ?? [];
+  const same = list.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  if (same) same.disciplines = toDisciplines([...same.disciplines, ...disciplines]);
+  else list.push({ name, disciplines });
+  p.consultants = list;
+  await saveProject(p).catch((err) => noticeModal("Not saved", (err as Error).message));
   render();
-  try {
-    const res = await post<{ check: ProjectCheck; usage: Usage }>("/api/check", JSON.stringify({ rfp: rfp.rfp, proposals }), {
-      "content-type": "application/json",
-    });
-    p.check = {
-      ...res.check,
-      firms: proposals.map((x) => x.firm),
-      comparisonIds: comparisons.map((c) => c.id).sort(),
-      checkedAt: Date.now(),
-      costUsd: res.usage.cost_usd,
-    };
-    await saveProject(p).catch((err) => noticeModal("Check not saved", (err as Error).message));
-  } catch (err) {
-    await noticeModal("Check failed", (err as Error).message);
-  } finally {
-    checking = false;
-    if (project === p) render();
-  }
+}
+
+async function removeConsultant(i: number) {
+  if (!project?.consultants?.[i]) return;
+  project.consultants.splice(i, 1);
+  await saveProject(project).catch((err) => noticeModal("Not saved", (err as Error).message));
+  render();
 }
 
 async function rename() {
@@ -244,7 +238,8 @@ async function onClick(e: Event) {
   const del = t.closest("[data-delete-project]")?.getAttribute("data-delete-project");
   if (del) await remove(del);
   else if (t.closest("[data-share]") && project) await copyShareLink("project", project.id, t.closest("[data-share]") as HTMLElement);
-  else if (t.closest("[data-check]")) await check();
+  else if (t.closest("[data-add-consultant]")) await addConsultant();
+  else if (t.closest("[data-remove-consultant]")) await removeConsultant(Number(t.closest("[data-remove-consultant]")!.getAttribute("data-remove-consultant")));
   else if (t.closest("[data-rename]")) await rename();
   else if (t.closest("[data-unlink]")) await unlink(t.closest("[data-unlink]")!.getAttribute("data-unlink")!);
   else if (t.closest("[data-compare]") && project) {

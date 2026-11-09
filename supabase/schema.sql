@@ -49,3 +49,13 @@ create table if not exists projects (
 );
 alter table projects enable row level security;
 grant select, insert, update, delete on projects to service_role;
+
+-- Consultants: firms added by hand (firms from proposals are listed from the proposals themselves).
+create table if not exists consultants (
+  id uuid primary key,
+  name text,
+  data jsonb not null,
+  saved_at timestamptz not null default now()
+);
+alter table consultants enable row level security;
+grant select, insert, update, delete on consultants to service_role;
