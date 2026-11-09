@@ -3,7 +3,7 @@
 export type Contact = { name: string; role: string; email: string; phone: string };
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-// "(412) 787-0720", "412-371-4460 x122", "412.321.3951 ext. 406", optionally labeled ("cell 919-623-3011").
+// "(555) 555-0100", "555-555-0101 x12", "555.555.0102 ext. 34", optionally labeled ("cell 555-555-0103").
 const PHONE = /(?:\b(?:office|cell|mobile|direct|phone|tel|fax|[ocmdpf])\b[:.]?\s*)?(?:\(\d{3}\)\s*|\b\d{3}[-.\s])\d{3}[-.\s]\d{4}(?:\s*(?:x|ext\.?)\s*\d+)?/gi;
 
 /**
