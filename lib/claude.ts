@@ -275,7 +275,7 @@ const CHECK_SYSTEM = `You are a senior principal at an architecture firm assembl
 // ---------- Calls ----------
 
 let client: Anthropic | null = null;
-function getClient(): Anthropic {
+export function getClient(): Anthropic {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new UserFacingError("ANTHROPIC_API_KEY is not set on the server. Add it to .env.local (local) or the Vercel project settings.", 500);
   }
@@ -313,7 +313,7 @@ const FILE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Deletes this app's uploaded PDFs older than a day. Runs once per comparison; failures are logged, not fatal. */
 /** Token usage and dollar cost of one response, from the API's own usage report. */
-function usageOf(msg: {
+export function usageOf(msg: {
   model: string;
   usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number | null; cache_read_input_tokens: number | null };
 }): Usage {
@@ -462,6 +462,58 @@ export async function checkProject(rfp: Rfp, proposals: Proposal[]): Promise<{ c
   checkStop(msg);
   if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's project check.", 502);
   return { check: msg.parsed_output, usage: usageOf(msg) };
+}
+
+// A starting fee drafted from the RFP review: budget, and the firm's own architecture and interior design work
+// (FF&E included when the RFP asks for it) by phase, task and role. Consultants are left to their own proposals.
+export const FeeDraftSchema = z.object({
+  budget: z.object({
+    by: z.enum(["amount", "area"]),
+    amount: z.number().nullable(),
+    area: z.number().nullable(),
+    cost_per_sf: z.number().nullable(),
+    basis: z.string(),
+  }),
+  target_percent: z.number(),
+  phases: z.array(
+    z.object({
+      name: z.string(),
+      target_share: z.number(),
+      tasks: z.array(z.object({ name: z.string(), hours: z.array(z.object({ role_id: z.string(), hours: z.number() })) })),
+    }),
+  ),
+  expenses: z.number().nullable(),
+  assumptions: z.array(z.string()),
+});
+export type FeeDraft = z.infer<typeof FeeDraftSchema>;
+
+const FEE_DRAFT_SYSTEM = `You are a senior principal at an architecture and interior design firm preparing a first-pass fee for a proposal response. You receive the firm's review of the RFP (JSON) and the firm's staff roles with hourly billing rates. Estimate only the firm's own work: architecture and interior design, plus FF&E (furniture, fixtures and equipment selection, specification and coordination) when the RFP includes it. Do not estimate engineering or other consultants (structural, MEP, civil, lab planning, hazardous materials, cost estimating, etc.); their fees come from their own proposals. Draft a realistic starting fee the team will then adjust.
+
+- budget: use the construction budget the RFP states. If it gives a range, use the midpoint and say so. If it states none, estimate one from the building size, building type, scope (new construction vs. renovation) and location, using by "area" with area in SF and a typical cost_per_sf; otherwise by "amount" with amount set and area/cost_per_sf null (fill area and cost_per_sf too if the RFP gives both size and budget, but keep by "amount"). basis: one plain sentence on where the budget came from.
+- target_percent: a typical fee for the firm's own architecture and interior design work (FF&E if included) on this project type, size and delivery method, as a percent of construction cost, not counting engineering or other consultants.
+- phases: only the phases the RFP asks the team to provide (facts.phases and services), in order, using these names where they fit: Pre-design, Schematic Design, Design Development, Construction Documents, Bidding, Construction Administration, Closeout. target_share is each phase's typical share of the architect's labor; shares add up to 100.
+- tasks: 2–6 per phase, specific to this project's architecture and interiors work (e.g. "Teaching lab layouts and casework", "Finish and furniture selections"); coordinating consultants' work is a task, their design work is not. When FF&E is in scope, include FF&E tasks in the phases where they happen (programming and selections in design, specifications and bid packages in CD and bidding, procurement and installation review in CA). hours: realistic hours for each role that would do the work, using only the role_ids given; leave out roles with no hours. Size the hours so the labor (hours × rates) comes out close to target_percent of the budget.
+- expenses: reimbursables if the RFP calls for them separately, else null.
+- assumptions: up to 6 short lines a reviewer must check: the budget basis, the architecture/interiors/FF&E scope you assumed (say whether FF&E is included and why), and anything the RFP leaves unclear that moves the fee.
+- Whole numbers for hours and dollars. Don't invent RFP facts; when you assume something, list it in assumptions.`;
+
+/** Drafts a starting fee from an RFP review. Text only (no PDFs), so it's quick and cheap. */
+export async function draftFee(rfp: Rfp, roles: { id: string; name: string; rate: number | null }[]): Promise<{ draft: FeeDraft; usage: Usage }> {
+  const stream = getClient().beta.messages.stream({
+    ...BASE,
+    system: FEE_DRAFT_SYSTEM,
+    output_config: { effort: "high", format: betaZodOutputFormat(FeeDraftSchema) },
+    messages: [
+      {
+        role: "user",
+        content: `RFP review (JSON):\n${JSON.stringify(rfp)}\n\nStaff roles and hourly rates (JSON):\n${JSON.stringify(roles)}`,
+      },
+    ],
+  });
+  const msg = await stream.finalMessage();
+  checkStop(msg);
+  if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's fee draft.", 502);
+  return { draft: msg.parsed_output, usage: usageOf(msg) };
 }
 
 export type ChatTurn ={ role: "user" | "assistant"; content: string };

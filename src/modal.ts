@@ -51,12 +51,13 @@ export function confirmDelete(what: string): Promise<boolean> {
 /**
  * Asks for one or more lines of text. Resolves the trimmed values in order, or null on Cancel / Escape / backdrop.
  * The confirm button stays disabled while a required field is empty. A field with `options` is a set of checkboxes;
- * its value in and out is the chosen options, one per line (option names may contain commas). A `contacts` field is
+ * its value in and out is the chosen options, one per line (option names may contain commas). With `single` they're
+ * radio buttons instead: exactly one can be chosen, and its value is that option. A `contacts` field is
  * one row per person (name, role, email, phone) with add/remove; its value in and out is a JSON array of Contact.
  */
 export function formModal(opts: {
   title: string;
-  fields: { label: string; value: string; placeholder?: string; required?: boolean; options?: readonly string[]; suggestions?: readonly string[]; contacts?: boolean }[];
+  fields: { label: string; value: string; placeholder?: string; required?: boolean; options?: readonly string[]; single?: boolean; suggestions?: readonly string[]; contacts?: boolean }[];
   confirm: string;
   /** Extra check on the current values; the confirm button stays disabled until it passes. */
   validate?: (values: string[]) => boolean;
@@ -79,7 +80,7 @@ export function formModal(opts: {
               } /></label>${f.suggestions ? `<datalist id="modal-list-${i}">${f.suggestions.map((o) => `<option value="${esc(o)}"></option>`).join("")}</datalist>` : ""}`;
             const on = new Set(f.value.split("\n").map((v) => v.trim()));
             return `<fieldset class="modal-field modal-options" data-field="${i}"><legend>${esc(f.label)}</legend>${f.options
-              .map((o) => `<label><input type="checkbox" value="${esc(o)}" ${on.has(o) ? "checked" : ""} /> ${esc(o)}</label>`)
+              .map((o) => `<label><input type="${f.single ? "radio" : "checkbox"}" ${f.single ? `name="modal-choice-${i}"` : ""} value="${esc(o)}" ${on.has(o) ? "checked" : ""} /> ${esc(o)}</label>`)
               .join("")}</fieldset>`;
           })
           .join("")}

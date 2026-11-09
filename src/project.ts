@@ -1,7 +1,9 @@
 import { DISCIPLINES, toDisciplines } from "../lib/disciplines";
-import { askProjectName, confirmModal, confirmTyped, formModal, noticeModal } from "./modal";
-import { deleteProject, projectLabel, listComparisons, listConsultants, listProjects, savesShared, listRfps, saveComparison, saveProject, saveRfp, type SavedComparison, type SavedProject, type SavedRfp } from "./store";
-import { formatWhen, parseDay, proposalDue, servicesMatrix } from "./rfp";
+import { askProjectName, confirmModal, confirmTyped, noticeModal } from "./modal";
+import { makeFee, proposalHtml } from "./fee";
+import { proposalTable } from "./fee-calc";
+import { deleteProject, listFees, saveFee, type SavedFee, projectLabel, listComparisons, listProjects, listSchedules, savesShared, listRfps, saveComparison, saveProject, saveRfp, saveSchedule, type SavedComparison, type SavedProject, type SavedRfp, type SavedSchedule } from "./store";
+import { formatWhen, parseDay, projectDisciplines, proposalDue } from "./rfp";
 import { copyShareLink } from "./share";
 import { esc, firmName } from "./table";
 
@@ -12,6 +14,8 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 let project: SavedProject | null = null;
 let rfp: SavedRfp | undefined;
 let comparisons: SavedComparison[] = [];
+let schedules: SavedSchedule[] = [];
+let fees: SavedFee[] = [];
 
 // "Compare proposals" on a project page: the next comparison is linked to this project.
 let pending: { id: string; name: string } | null = null;
@@ -34,9 +38,11 @@ export async function openProject(id: string) {
 async function load() {
   if (!project) return;
   const id = project.id;
-  const [rfps, cmps] = await Promise.all([listRfps(), listComparisons()]);
+  const [rfps, cmps, scheds, fs] = await Promise.all([listRfps(), listComparisons(), listSchedules(), listFees()]);
   rfp = rfps.find((r) => r.id === project!.rfpId) ?? rfps.find((r) => r.projectId === id);
   comparisons = cmps.filter((c) => c.projectId === id);
+  schedules = scheds.filter((s) => s.workspaceProjectId === id);
+  fees = fs.filter((f) => f.workspaceProjectId === id);
 }
 
 
@@ -67,8 +73,6 @@ export async function showProjectList() {
     ${items ? `<ol>${items}</ol>` : `<p class="none">No projects yet. Start one from an RFP review.</p>`}</div>`;
 }
 
-const day = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-
 function render() {
   if (!project) return;
   const p = project;
@@ -76,7 +80,7 @@ function render() {
     .map(
       (c) => `<li>
         <a class="link open" href="#proposals/${encodeURIComponent(c.id)}"><b>${esc(c.proposals.map((x) => firmName(x.firm)).join(", "))}</b></a>
-        <span class="when">${esc(day(c.savedAt))}</span>
+        <span></span>
         <button class="link" data-unlink="${esc(c.id)}">Remove</button>
       </li>`,
     )
@@ -104,16 +108,112 @@ function render() {
     <div class="block">
       <h2 class="label">Consultants</h2>
       ${consultantsHtml(p)}
-      <div class="actions"><button class="btn" data-add-consultant>Add consultant</button></div>
+    </div>
+
+    <div class="block saved">
+      <h2 class="label">Schedule</h2>
+      ${
+        schedules.length
+          ? `<ol>${schedules
+              .map(
+                (s) => `<li>
+                  <a class="link open" href="#schedule/${encodeURIComponent(s.id)}"><b>${esc(String(s.title || "Untitled schedule"))}</b></a>
+                  <span></span>
+                  <span></span>
+                </li>`,
+              )
+              .join("")}</ol>`
+          : `<p class="none">None yet.</p>`
+      }
+      ${schedules.length ? "" : `<div class="actions"><button class="btn" data-make-schedule>Make schedule</button></div>`}
+    </div>
+
+    <div class="block saved">
+      <h2 class="label">Fee</h2>
+      ${
+        fees.length
+          ? `<ol>${fees
+              .map(
+                (f) => `<li>
+                  <a class="link open" href="#fee/${encodeURIComponent(f.id)}"><b>${esc(f.title || "Untitled fee")}</b></a>
+                  <span></span>
+                  <span></span>
+                </li>`,
+              )
+              .join("")}</ol>`
+          : `<p class="none">None yet.</p>`
+      }
+      ${(() => {
+        // The fee as it goes in the proposal, once it has amounts.
+        const table = fees[0] && proposalTable(fees[0]);
+        return table?.rows.length ? `<div class="scroll fee-on-project">${proposalHtml(table)}</div>` : "";
+      })()}
+      ${fees.length ? "" : `<div class="actions"><button class="btn" data-make-fee>Make fee</button></div>`}
     </div>`;
 }
 
+const MONTH_MS = 31 * 864e5;
+const firstOfMonth = (t: number) => {
+  const d = new Date(t);
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+};
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 /**
- * The project's disciplines in governing-list order: those the RFP asks for, plus any a consultant on the project
- * covers. Each lists the firms covering it: from linked proposals, and added by hand (removable).
+ * Starts a schedule for this project, in the schedule editor's own format (as its blank template makes them), with the
+ * RFP's dated items (proposal due, interviews, award, design and construction milestones) as milestones.
+ */
+/** Makes the project's schedule; a project has at most one, so if it already has one, opens that instead. */
+async function makeSchedule() {
+  if (!project) return;
+  const p = project;
+  const existing = (await listSchedules()).find((s) => s.workspaceProjectId === p.id);
+  if (existing) {
+    location.hash = `#schedule/${encodeURIComponent(existing.id)}`;
+    return;
+  }
+  const dated = (rfp?.rfp.dates ?? []).filter((d) => parseDay(d.date)).sort((a, b) => a.date.localeCompare(b.date));
+  const times = dated.map((d) => parseDay(d.date)!.getTime());
+  const start = firstOfMonth(Math.min(Date.now(), ...times));
+  const end = firstOfMonth(Math.max(start.getTime() + 12 * MONTH_MS, ...times.map((t) => t + 2 * MONTH_MS)));
+  const tasks = dated.length
+    ? dated.map((d, i) => ({ id: i + 1, name: d.label, type: "milestone", date: d.date }))
+    : [{ id: 1, name: "Project Kick-Off", type: "milestone", date: iso(start) }];
+  const schedule: SavedSchedule = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    savedAt: Date.now(),
+    createdAt: Date.now(),
+    workspaceProjectId: p.id,
+    title: p.name,
+    notes: [
+      "Project schedules are reliant on timely Owner input and approvals.",
+      "R3A does not provide accurate projections for construction duration or timelines beyond the Construction Documentation phase.",
+    ].join("\n"),
+    date: "",
+    number: p.number ?? "",
+    client: rfp?.rfp.client ?? "",
+    viewStart: iso(start),
+    viewEnd: iso(end),
+    todayMark: iso(new Date()),
+    nextTaskId: tasks.length + 1,
+    tasks,
+    legend: { deliverables: [], milestones: [], estimates: [], approvals: [] },
+    colorVersion: 2,
+  };
+  try {
+    await saveSchedule(schedule);
+  } catch (err) {
+    return noticeModal("Schedule not saved", (err as Error).message);
+  }
+  location.hash = `#schedule/${encodeURIComponent(schedule.id)}`;
+}
+
+/**
+ * The project's disciplines in governing-list order: those needed (see neededDisciplines), plus any a consultant on
+ * the project covers. Each lists the firms covering it: from linked proposals, and added by hand (removable).
  */
 function consultantsHtml(p: SavedProject): string {
-  const requested = new Set(rfp ? requestedDisciplines(rfp) : []);
+  const requested = new Set(neededDisciplines(p));
   const rows = DISCIPLINES.map((d) => {
     const fromProposals = new Map<string, string>(); // firm → comparison id
     for (const c of comparisons)
@@ -121,42 +221,25 @@ function consultantsHtml(p: SavedProject): string {
     const added = (p.consultants ?? []).map((c, i) => ({ ...c, i })).filter((c) => c.disciplines.includes(d));
     return { d, fromProposals, added, needed: requested.has(d) };
   }).filter((r) => r.needed || r.fromProposals.size || r.added.length);
-  if (!rows.length) return `<p class="none">${rfp ? "The RFP review doesn't list any of the standard disciplines yet." : "No RFP review or consultants yet."}</p>`;
+  if (!rows.length) return `<p class="none">None yet.</p>`;
   return `<table class="grid facts team">${rows
     .map((r) => {
       const firms = [
         ...[...r.fromProposals].map(([firm, id]) => `<a class="link" href="#proposals/${encodeURIComponent(id)}">${esc(firm)}</a> <span class="note">proposal</span>`),
         ...r.added.map((c) => `${esc(c.name)} <button class="link" data-remove-consultant="${c.i}" aria-label="Remove ${esc(c.name)}">Remove</button>`),
       ];
-      return `<tr><th scope="row">${esc(r.d)}</th><td>${firms.length ? firms.join("<br />") : `<span class="needed">Needed</span>`}</td></tr>`;
+      return `<tr><th scope="row">${esc(r.d)}</th><td>${firms.length ? firms.join("<br />") : `<span class="needed">Needed</span> <button class="link" data-remove-discipline="${esc(r.d)}" aria-label="Remove ${esc(r.d)}">Remove</button>`}</td></tr>`;
     })
     .join("")}</table>`;
 }
 
-/** Governing disciplines the RFP requests. */
-const requestedDisciplines = (r: SavedRfp) => servicesMatrix(r.rfp).filter((x) => x.requested === "yes").map((x) => x.discipline);
+const neededDisciplines = (p: SavedProject) => projectDisciplines(rfp?.rfp, p.disciplinesRemoved);
 
-/** Adds a firm from the directory (or a new name) to the project for the disciplines ticked. */
-async function addConsultant() {
+/** Takes a discipline the RFP review requests off this project's needed list (the review itself is unchanged). */
+async function removeDiscipline(d: string) {
   if (!project) return;
   const p = project;
-  const directory = await listConsultants();
-  const values = await formModal({
-    title: "Add consultant",
-    fields: [
-      { label: "Firm", value: "", required: true, placeholder: "Start typing a firm from the directory", suggestions: directory.map((c) => c.name).sort() },
-      { label: "Disciplines on this project", value: "", required: true, options: DISCIPLINES },
-    ],
-    confirm: "Add",
-  });
-  if (!values) return;
-  const [name, picked] = values;
-  const disciplines = toDisciplines(picked.split("\n"));
-  const list = p.consultants ?? [];
-  const same = list.find((c) => c.name.toLowerCase() === name.toLowerCase());
-  if (same) same.disciplines = toDisciplines([...same.disciplines, ...disciplines]);
-  else list.push({ name, disciplines });
-  p.consultants = list;
+  p.disciplinesRemoved = toDisciplines([...(p.disciplinesRemoved ?? []), d]);
   await saveProject(p).catch((err) => noticeModal("Not saved", (err as Error).message));
   render();
 }
@@ -213,7 +296,7 @@ async function remove(id: string) {
   const ok = await confirmTyped({
     title: "Delete this project?",
     name: projectLabel(target),
-    body: `Its RFP review and comparisons are kept; they just won't be linked to a project. ${
+    body: `Its RFP review, comparisons and schedules are kept; they just won't be linked to a project. ${
       savesShared() ? "The project is removed for everyone who uses this app." : "The project is removed from this browser."
     } This can't be undone.`,
     confirm: "Delete project",
@@ -224,6 +307,8 @@ async function remove(id: string) {
     await Promise.all([
       ...rfps.filter((r) => r.projectId === id).map((r) => saveRfp({ ...r, projectId: undefined, project: null })),
       ...cmps.filter((c) => c.projectId === id).map((c) => saveComparison({ ...c, projectId: undefined, projectName: null })),
+      ...(await listSchedules()).filter((s) => s.workspaceProjectId === id).map((s) => saveSchedule({ ...s, workspaceProjectId: undefined })),
+      ...(await listFees()).filter((f) => f.workspaceProjectId === id).map((f) => saveFee({ ...f, workspaceProjectId: undefined })),
     ]);
     await deleteProject(id);
   } catch (err) {
@@ -238,7 +323,9 @@ async function onClick(e: Event) {
   const del = t.closest("[data-delete-project]")?.getAttribute("data-delete-project");
   if (del) await remove(del);
   else if (t.closest("[data-share]") && project) await copyShareLink("project", project.id, t.closest("[data-share]") as HTMLElement);
-  else if (t.closest("[data-add-consultant]")) await addConsultant();
+  else if (t.closest("[data-remove-discipline]")) await removeDiscipline(t.closest("[data-remove-discipline]")!.getAttribute("data-remove-discipline")!);
+  else if (t.closest("[data-make-schedule]")) await makeSchedule();
+  else if (t.closest("[data-make-fee]") && project) await makeFee(project);
   else if (t.closest("[data-remove-consultant]")) await removeConsultant(Number(t.closest("[data-remove-consultant]")!.getAttribute("data-remove-consultant")));
   else if (t.closest("[data-rename]")) await rename();
   else if (t.closest("[data-unlink]")) await unlink(t.closest("[data-unlink]")!.getAttribute("data-unlink")!);

@@ -6,7 +6,8 @@
   --bg: #fff;
   --good: #111;
   --bad: #b3261e;
-  --blue: #2f5bd3;
+  /* Named so it can't clash with the schedule editor's own --blue. */
+  --site-blue: #2f5bd3;
   /* One typeface everywhere (bundled with the app, so it's identical on every computer and on paper). */
   --sans: "Inter Variable", "Helvetica Neue", Arial, sans-serif;
   --mono: var(--sans);
@@ -24,8 +25,8 @@ body {
 
 /* Footer sits at the bottom of short pages too */
 body { min-height: 100vh; display: flex; flex-direction: column; }
-main { flex: 1; }
-footer.site { background: var(--blue); color: #fff; padding: 14px 32px; font-size: 12px; line-height: 1.5; }
+body > main { flex: 1; }
+footer.site { background: var(--site-blue); color: #fff; padding: 14px 32px; font-size: 12px; line-height: 1.5; }
 
 /* Header */
 header.site {
@@ -39,14 +40,14 @@ nav.tabs a:hover { color: var(--ink); }
 nav.tabs a.on { color: var(--ink); border-bottom-color: var(--ink); }
 .tab[hidden] { display: none; }
 .mark { font-size: 15px; font-weight: 500; color: var(--ink); text-decoration: none; }
-.meta, .label, .status, .legend, .toggle {
+.meta, .label, .status, :where(body > main) .legend, .toggle {
   font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
 }
 .label { display: block; margin: 0 0 12px; font-family: var(--sans); font-size: 15px; letter-spacing: 0; text-transform: none; font-weight: 700; color: var(--ink); }
 
-main { padding: 0 32px 96px; }
+body > main { padding: 0 32px 96px; }
 #intake { max-width: 960px; }
-section { padding-top: 40px; }
+body > main section { padding-top: 40px; }
 
 .lede { font-size: 22px; line-height: 1.35; max-width: 760px; margin: 0 0 40px; }
 
@@ -108,8 +109,8 @@ section { padding-top: 40px; }
 .msg.error .btn { display: block; margin-top: 8px; font-size: 13px; padding: 6px 12px; }
 
 /* Cost notes */
-.estimate { font-size: 12px; color: var(--muted); margin: 10px 0 0; max-width: 640px; line-height: 1.45; }
-.estimate:empty { display: none; }
+:where(body > main, .chat) .estimate { font-size: 12px; color: var(--muted); margin: 10px 0 0; max-width: 640px; line-height: 1.45; }
+:where(body > main, .chat) .estimate:empty { display: none; }
 .cost { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-right: auto; }
 .chat-form .estimate { margin: 6px 0 0; }
 
@@ -141,8 +142,8 @@ details.more > summary::-webkit-details-marker { display: none; }
 details.more > summary::before { content: "+ "; }
 details.more[open] > summary::before { content: "− "; }
 details.more[open] > .notes { margin-top: 16px; }
-.legend { margin: -4px 0 16px; display: flex; flex-wrap: wrap; gap: 6px 24px; text-transform: none; letter-spacing: 0; font-family: var(--sans); font-size: 12px; }
-.legend b { font-weight: 500; margin-right: 4px; }
+:where(body > main) .legend { margin: -4px 0 16px; display: flex; flex-wrap: wrap; gap: 6px 24px; text-transform: none; letter-spacing: 0; font-family: var(--sans); font-size: 12px; }
+:where(body > main) .legend b { font-weight: 500; margin-right: 4px; }
 
 /* Tables fit the page; only scroll on phones (see --min-table) */
 .scroll { overflow-x: auto; }
@@ -200,7 +201,7 @@ table.diff-only tr.same { display: none; }
   display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--ink);
 }
 .chat[hidden] { display: none; }
-body.chat-open main, body.chat-open footer.site { margin-right: 420px; }
+body.chat-open > main, body.chat-open footer.site { margin-right: 420px; }
 .chat-head { display: flex; justify-content: space-between; align-items: baseline; padding: 20px 20px 12px; border-bottom: 1px solid var(--rule); }
 .chat-head .label { margin: 0; }
 .chat-log { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; font-size: 14px; }
@@ -229,14 +230,14 @@ body.chat-open main, body.chat-open footer.site { margin-right: 420px; }
 .chat-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
 @media (max-width: 900px) {
   .chat { width: 100%; border-left: 0; }
-  body.chat-open main, body.chat-open footer.site { margin-right: 0; }
+  body.chat-open > main, body.chat-open footer.site { margin-right: 0; }
 }
 
 .print-head { display: none; }
 .print-note { display: none; }
 
 @media (max-width: 640px) {
-  header.site, main, footer.site { padding-left: 16px; padding-right: 16px; }
+  header.site, body > main, footer.site { padding-left: 16px; padding-right: 16px; }
   .lede { font-size: 18px; }
   .toolbar { flex-direction: column; align-items: flex-start; }
   .headline { font-size: 20px; }
@@ -272,7 +273,7 @@ dialog.modal p { margin: 0 0 20px; color: var(--ink); font-size: 14px; }
 /* Feedback widget */
 .feedback { position: fixed; right: 20px; bottom: calc(20px + var(--footer-lift, 0px)); z-index: 40; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 body.chat-open .feedback { display: none; }
-.feedback-toggle { background: var(--blue); border-color: var(--blue); color: #fff; }
+.feedback-toggle { background: var(--site-blue); border-color: var(--site-blue); color: #fff; }
 .feedback-toggle:hover:not(:disabled) { background: #2449b0; }
 .feedback-panel { width: 300px; background: var(--bg); border: 1px solid var(--ink); padding: 12px; }
 .feedback-panel[hidden] { display: none; }
@@ -312,10 +313,10 @@ h2.group { font-size: 20px; font-weight: 700; margin: 40px 0 20px; padding-botto
 .card { border: 1.5px solid var(--ink); padding: 18px; display: flex; flex-direction: column; font-size: 13px; }
 .card h3 { font-size: 16px; font-weight: 700; text-align: center; margin: 0 0 10px; }
 .card .disc { text-align: center; margin: 0 0 14px; padding-bottom: 14px; border-bottom: 1px solid var(--ink); font-size: 13px; }
-.card-body p { margin: 0 0 6px; overflow-wrap: anywhere; }
-.card-body b { font-weight: 700; }
-.card-body .contact { display: block; margin-top: 4px; }
-.card-body .contact + .contact { margin-top: 8px; }
+:where(body > main) .card-body p { margin: 0 0 6px; overflow-wrap: anywhere; }
+:where(body > main) .card-body b { font-weight: 700; }
+:where(body > main) .card-body .contact { display: block; margin-top: 4px; }
+:where(body > main) .card-body .contact + .contact { margin-top: 8px; }
 .modal-contacts { border: 0; padding: 0; }
 .modal-contacts legend { padding: 0; margin-bottom: 6px; }
 .contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--rule); }
@@ -385,8 +386,8 @@ mark { padding: 0 3px; }
   /* Printed RFP reviews end with this reminder, in a box so it isn't missed. */
   .print-note { display: block; margin-top: 24px; padding: 10px; border: 1.5pt solid #000; font-weight: 700; font-size: 12px; break-inside: avoid; }
   header.site, footer.site, .feedback, .q-remove, .q-add, #intake, #rfp-intake, .rfp-top, .toolbar, .chat, select.project, .project-name { display: none !important; }
-  body.chat-open main, body.chat-open footer.site { margin-right: 0; }
-  main { padding: 0; max-width: none; }
+  body.chat-open > main, body.chat-open footer.site { margin-right: 0; }
+  body > main { padding: 0; max-width: none; }
   #results { border: 0; margin: 0; padding: 0; }
   .print-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #000; padding-bottom: 8px; margin-bottom: 20px; }
   body { font-size: 11px; }
@@ -403,3 +404,69 @@ mark { padding: 0 3px; }
   .overview, .flags li, .questions { font-size: 11px; }
   .notes > div { break-inside: avoid; }
 }
+
+/* Schedule screens (src/schedule/). The list sits under the site header; the editor, share view, print preview and
+   prompt page fill the window as they did in the schedule maker. Its styles are only loaded while one is showing. */
+html.schedule-on body > main { display: none; }
+#schedule-root { flex: 1; display: flex; flex-direction: column; }
+/* Schedule screens keep the site header; the editor fills the rest of the window, so the footer is hidden.
+   The print preview (also shown inside the print panel) is the page itself, with no site chrome. */
+html.schedule-full footer.site { display: none; }
+html.schedule-print header.site, html.schedule-print .feedback { display: none; }
+/* Keep this app's own typeface on its header, footer, feedback widget and dialogs while the schedule's (Barlow) is loaded. */
+header.site, footer.site, .feedback, dialog.modal { font-family: var(--sans); }
+header.site, .feedback, dialog.modal { font-size: 15px; line-height: 1.5; }
+/* The schedule's reset zeroes every margin, which would pin dialogs to the top left instead of centring them. */
+dialog.modal { margin: auto; }
+
+/* ---------- Fee ---------- */
+/* Work-in-progress strip across the top of the Fee tab: scrolls, or stays still for reduced motion. */
+.wip { margin: 0 -32px; overflow: hidden; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.wip-track { display: flex; width: max-content; animation: wip-scroll 40s linear infinite; }
+.wip-track span { padding: 8px 32px; white-space: nowrap; }
+@keyframes wip-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .wip-track { animation: none; width: auto; }
+  .wip-track span + span { display: none; }
+}
+@media (max-width: 640px) { .wip { margin: 0 -16px; } }
+
+.fee-in { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--rule); padding: 4px 6px; width: 100%; min-width: 0; }
+.fee-in:focus { outline: none; border-color: var(--ink); }
+.fee-in.num { text-align: right; }
+.fee-in.pct { width: 4.5em; text-align: right; }
+.fee-title { font-size: 28px; font-weight: 700; border-color: transparent; padding: 2px 0; margin: 8px 0 4px; }
+.fee-title:hover { border-color: var(--rule); }
+.fee-project { margin: 0 0 40px; font-size: 14px; }
+.fee-budget { max-width: 640px; }
+.fee-pair { display: flex; align-items: center; gap: 8px; }
+.fee-pair .fee-in:not(.pct) { flex: 1; }
+table.fee-table, .scroll table.fee-table { table-layout: auto; min-width: 560px; }
+.fee-table th { white-space: nowrap; }
+.fee-tasks thead th.num { white-space: normal; min-width: 72px; }
+.fee-rates { max-width: 760px; }
+.fee-rates td:first-child { width: 40%; }
+.fee-rates td.num:nth-child(2) { width: 140px; }
+.fee-table td { vertical-align: middle; }
+.fee-table th.num, .fee-table td.num { text-align: right; }
+.fee-table tfoot th, .fee-table tfoot td { font-weight: 600; }
+.fee-tasks td.num { width: 80px; }
+.fee-phase { margin-bottom: 32px; }
+.fee-phase-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.fee-phase-name { font-weight: 600; flex: 1 1 220px; max-width: 360px; }
+.fee-phase .note { font-size: 13px; }
+.fee-summary tr.subtotal th, .fee-summary tr.subtotal td { border-top: 1px solid var(--ink); font-weight: 600; }
+.fee-summary tr.total th, .fee-summary tr.total td { border-top: 2px solid var(--ink); font-weight: 700; }
+.fee-summary tr.off td { color: var(--bad); }
+.fee-check { max-width: 640px; margin-top: 24px; }
+@media print { .wip { display: none; } }
+.fee-choice { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.fee-choice label { display: flex; align-items: center; gap: 6px; }
+.fee-draft { border: 1px solid var(--ink); padding: 16px 20px; max-width: 760px; }
+.fee-draft ul { margin: 0; padding-left: 18px; font-size: 14px; }
+.fee-draft li + li { margin-top: 4px; }
+.fee-draft .note { margin: 10px 0 0; font-size: 12px; }
+.fee-tasks td:first-child { min-width: 300px; }
+.fee-cons td:nth-child(-n+2) { min-width: 160px; }
+.fee-table .link { white-space: nowrap; }
+.fee-on-project { margin-top: 16px; }

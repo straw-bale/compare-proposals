@@ -297,6 +297,14 @@ export type ServiceRow = { discipline: Discipline; requested: "yes" | "no" | "un
  * matrix; the earlier free-text list (listed = yes, the rest = no); and the oldest one-line summary (matches = yes,
  * the rest unknown). Anything that isn't a governing discipline is left out.
  */
+/** Disciplines a project needs: those its RFP review requests, minus any removed on the project page. */
+export function projectDisciplines(rfp: Rfp | undefined, removed: string[] = []): Discipline[] {
+  if (!rfp) return [];
+  return servicesMatrix(rfp)
+    .filter((x) => x.requested === "yes" && !removed.includes(x.discipline))
+    .map((x) => x.discipline);
+}
+
 export function servicesMatrix(rfp: Rfp): ServiceRow[] {
   type Saved = { discipline: string; detail: string; page: number; requested?: string };
   const list = (rfp as { services?: Saved[] }).services;

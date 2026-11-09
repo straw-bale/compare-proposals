@@ -3,6 +3,8 @@
 /** US$ per million tokens, Anthropic list prices (Oct 2026). Update here if pricing changes. */
 const PRICES: Record<string, { input: number; output: number; cacheWrite: number; cacheRead: number }> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
+  // The Schedule Assistant (lib/schedule-ai.ts).
+  "claude-sonnet-4-6": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   // Possible server-side fallback model if a request is declined.
   "claude-opus-4-8": { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
 };

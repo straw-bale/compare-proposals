@@ -59,3 +59,26 @@ create table if not exists consultants (
 );
 alter table consultants enable row level security;
 grant select, insert, update, delete on consultants to service_role;
+
+-- Schedules (moved from the schedule maker). Ids are text, not uuids: the schedule maker made its own.
+-- project_id links a schedule to a project here (empty for schedules made on their own).
+create table if not exists schedules (
+  id text primary key,
+  project_id text,
+  title text,
+  data jsonb not null,
+  saved_at timestamptz not null default now()
+);
+alter table schedules enable row level security;
+grant select, insert, update, delete on schedules to service_role;
+
+-- Fees (the fee builder). project_id links a fee to a project here (empty for fees made on their own).
+create table if not exists fees (
+  id text primary key,
+  project_id text,
+  title text,
+  data jsonb not null,
+  saved_at timestamptz not null default now()
+);
+alter table fees enable row level security;
+grant select, insert, update, delete on fees to service_role;

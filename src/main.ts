@@ -18,10 +18,18 @@ import { confirmDelete, noticeModal } from "./modal";
 import { getCurrentRfp, initRfp, openRfp } from "./rfp";
 import { showCalls } from "./calls";
 import { showConsultants } from "./consultants";
+import { flushFee, showFee } from "./fee";
 import { clearPendingProject, initProject, openProject, pendingProject, showProjectList } from "./project";
 import { setPrintName } from "./print";
 import { copyShareLink, parseHash } from "./share";
 import { briefingHtml, esc, feeTable, firmName, notesHtml, scopeTable, type Sourced } from "./table";
+
+// Opening straight onto a schedule screen: hide the footer (and, for the print preview, the header) from the first
+// paint, so they don't flash before the schedule loads (e.g. inside the print panel's preview).
+if (/^#schedule[-/]/.test(location.hash) && !location.hash.startsWith("#schedule-prompt")) {
+  document.documentElement.classList.add("schedule-on", "schedule-full");
+  if (location.hash.startsWith("#schedule-print")) document.documentElement.classList.add("schedule-print");
+}
 
 // Vercel rejects request bodies over 4.5 MB; locally there's no limit.
 const MAX_BYTES = import.meta.env.PROD ? 4.4 * 1024 * 1024 : Infinity;
@@ -680,8 +688,26 @@ function start() {
 
 // ---------- Tabs ----------
 
-const TABS = ["rfp", "proposals", "fee", "project", "consultants", "schedule", "calls"];
+const TABS = ["rfp", "proposals", "fee", "project", "consultants", "calls"];
+// The schedule screens (#schedule, #schedule/<id>, …) are loaded only when first opened.
+type ScheduleModule = typeof import("./schedule/mount");
+let schedule: ScheduleModule | null = null;
+const onSchedule = () => location.hash.startsWith("#schedule");
+
 function showTab() {
+  if (onSchedule()) {
+    if (!started) return; // waits for the access code; start() calls showTab again
+    for (const t of TABS) $(`tab-${t}`).hidden = true;
+    document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === "schedule"));
+    setChatOpen(false);
+    flushFee();
+    import("./schedule/mount").then((m) => {
+      schedule = m;
+      if (onSchedule()) m.showSchedule(location.hash);
+    });
+    return;
+  }
+  schedule?.hideSchedule();
   const { tab: t, id } = parseHash();
   const tab = TABS.includes(t) ? t : "project";
   for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
@@ -693,6 +719,8 @@ function showTab() {
   if (!id && tab === "project" && started) showProjectList();
   if (tab === "consultants" && started) showConsultants();
   if (tab === "calls" && started) showCalls();
+  if (tab === "fee" && started) showFee(id);
+  else flushFee();
 }
 
 /** On the intake, names the project the next comparison will be linked to (when started from a project page). */
@@ -728,7 +756,8 @@ feedbackForm.addEventListener("keydown", (e) => {
 // Lift the widget above the blue footer while the footer is on screen.
 const footer = document.querySelector("footer.site") as HTMLElement;
 const liftFeedback = () => {
-  const visible = Math.max(0, innerHeight - footer.getBoundingClientRect().top);
+  // A hidden footer (schedule editor) reports top 0, which would push the widget off screen.
+  const visible = footer.offsetParent ? Math.max(0, innerHeight - footer.getBoundingClientRect().top) : 0;
   document.body.style.setProperty("--footer-lift", `${visible}px`);
 };
 addEventListener("scroll", liftFeedback, { passive: true });

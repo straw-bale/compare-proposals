@@ -45,6 +45,8 @@ const READINGS = "readings";
 const RFPS = "rfps";
 const PROJECTS = "projects";
 const CONSULTANTS = "consultants";
+const SCHEDULES = "schedules";
+const FEES = "fees";
 
 /** A consultant firm in the directory. Firms from proposals that aren't saved are listed from the proposals. */
 export type SavedConsultant = {
@@ -75,13 +77,15 @@ export type SavedProject = {
   rfpId?: string;
   /** Consultants added to the project by hand (firms whose proposals are linked are shown from the proposals). */
   consultants?: { name: string; disciplines: string[] }[];
+  /** Disciplines the RFP review requests that this project doesn't need a consultant for. */
+  disciplinesRemoved?: string[];
   /** The last check of its proposals against the RFP. firms[i] names firm_index i; comparisonIds are what was checked. */
   check?: ProjectCheck & { firms: string[]; comparisonIds: string[]; checkedAt: number; costUsd: number | null };
 };
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 5);
+    const req = indexedDB.open(DB, 7);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
@@ -89,6 +93,8 @@ function open(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(RFPS)) db.createObjectStore(RFPS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(PROJECTS)) db.createObjectStore(PROJECTS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(CONSULTANTS)) db.createObjectStore(CONSULTANTS, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(SCHEDULES)) db.createObjectStore(SCHEDULES, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(FEES)) db.createObjectStore(FEES, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -108,19 +114,21 @@ async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
 // Supabase (through /api/db, so the key stays on the server) when it's configured; otherwise this browser's
 // IndexedDB. The server answers 503 when Supabase isn't set up, and the app then stays local for the session.
 
-type Kind = "comparisons" | "rfps" | "readings" | "projects" | "consultants";
-const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS, projects: PROJECTS, consultants: CONSULTANTS };
+type Kind = "comparisons" | "rfps" | "readings" | "projects" | "consultants" | "schedules" | "fees";
+const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS, projects: PROJECTS, consultants: CONSULTANTS, schedules: SCHEDULES, fees: FEES };
 let local = false;
 /** False once the app has fallen back to this browser's storage (Supabase not configured). */
 export const savesShared = () => !local;
 
-async function remote<T>(method: string, kind: Kind, opts: { key?: string; body?: unknown } = {}): Promise<T | undefined> {
+async function remote<T>(method: string, kind: Kind, opts: { key?: string; body?: unknown; keepalive?: boolean } = {}): Promise<T | undefined> {
   if (local) return undefined;
   const q = new URLSearchParams({ table: kind, ...(opts.key ? { key: opts.key } : {}) });
   const res = await fetch(`/api/db?${q}`, {
     method,
     headers: { "x-access-code": accessCode(), ...(opts.body ? { "content-type": "application/json" } : {}) },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
+    // Lets a save started as the page closes finish after it's gone.
+    keepalive: opts.keepalive,
   });
   if (res.status === 503) {
     local = true;
@@ -131,9 +139,9 @@ async function remote<T>(method: string, kind: Kind, opts: { key?: string; body?
   return data as T;
 }
 
-async function saveRecord(kind: Kind, record: object): Promise<void> {
+async function saveRecord(kind: Kind, record: object, keepalive = false): Promise<void> {
   if (!local) {
-    await remote("POST", kind, { body: record });
+    await remote("POST", kind, { body: record, keepalive });
     if (!local) return;
   }
   try {
@@ -177,6 +185,52 @@ export const deleteProject = (id: string) => deleteRecord("projects", id);
 export const saveConsultant = (c: SavedConsultant) => saveRecord("consultants", c);
 export const listConsultants = () => listRecords<SavedConsultant>("consultants");
 export const deleteConsultant = (id: string) => deleteRecord("consultants", id);
+
+/** A schedule, as the schedule editor keeps it (title, tasks, legend, view…); linked to a project by workspaceProjectId. */
+export type SavedSchedule = { id: string; savedAt: number; createdAt?: number; title?: string; workspaceProjectId?: string } & Record<string, unknown>;
+/** keepalive: for the last save as the page closes. */
+export const saveSchedule = (s: SavedSchedule, keepalive = false) => saveRecord("schedules", s, keepalive);
+export const listSchedules = () => listRecords<SavedSchedule>("schedules");
+export const deleteSchedule = (id: string) => deleteRecord("schedules", id);
+
+/** A role on the fee (Principal, Project Manager, ...) with its hourly billing rate. */
+export type FeeRole = { id: string; name: string; rate: number | null };
+export type FeeTask = { id: string; name: string; /** hours by role id */ hours: Record<string, number> };
+export type FeePhase = { id: string; name: string; /** typical share of labor, in percent */ targetShare: number; tasks: FeeTask[] };
+export type FeeConsultant = { id: string; discipline: string; firm: string; /** quoted fee by phase id */ byPhase: Record<string, number> };
+
+/** A fee being built for a project: labor by phase and role, consultants with a management markup, and a budget. */
+export type SavedFee = {
+  id: string;
+  savedAt: number;
+  title: string;
+  workspaceProjectId?: string;
+  /** the template it started from */
+  template: string;
+  /** construction budget: typed as an amount, or worked out as area × cost per square foot */
+  budget: {
+    /** how the budget is set: an amount typed in, or area × cost per square foot (older fees: worked out) */
+    by?: "amount" | "area";
+    amount: number | null;
+    area: number | null;
+    costPerSf: number | null;
+  };
+  /** the top-down fee, as a percent of the construction budget */
+  targetPercent: number | null;
+  roles: FeeRole[];
+  phases: FeePhase[];
+  consultants: FeeConsultant[];
+  /** the architect's management markup on consultant fees, in percent */
+  markupPercent: number;
+  /** reimbursable expenses */
+  expenses: number | null;
+  /** set when the fee was drafted by AI from the RFP review: what it assumed, and what the draft cost */
+  draft?: { basis: string; assumptions: string[]; costUsd: number | null; at: number };
+};
+
+export const saveFee = (f: SavedFee, keepalive = false) => saveRecord("fees", f, keepalive);
+export const listFees = () => listRecords<SavedFee>("fees");
+export const deleteFee = (id: string) => deleteRecord("fees", id);
 export const saveReading = (r: SavedReading) => saveRecord("readings", r).catch(console.error);
 
 export async function getReading(hash: string): Promise<SavedReading | undefined> {
