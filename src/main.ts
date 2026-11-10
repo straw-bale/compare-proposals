@@ -111,7 +111,7 @@ async function estimateNew() {
   const todo = entries.filter((e) => e.state === "queued" && e.hash !== undefined && e.estTokens == null && !e.estFailed);
   await pool(todo, 2, async (e) => {
     try {
-      e.estTokens = (await post<{ input_tokens: number }>("/api/estimate", e.file, { "content-type": "application/pdf" })).input_tokens;
+      e.estTokens = (await post<{ input_tokens: number }>("/api/upload", e.file, { "content-type": "application/pdf", "x-action": "estimate" })).input_tokens;
     } catch {
       e.estFailed = true;
     }

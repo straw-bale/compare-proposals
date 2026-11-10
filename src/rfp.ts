@@ -65,7 +65,7 @@ function addFiles(list: FileList) {
     else if (file.size > MAX_STORED) entry.error = "Over 50 MB, compress or split it first";
     else if (file.size > MAX_BYTES) entry.tokens = UNMEASURED;
     else
-      post<{ input_tokens: number }>("/api/estimate", file, { "content-type": "application/pdf" })
+      post<{ input_tokens: number }>("/api/upload", file, { "content-type": "application/pdf", "x-action": "estimate" })
         .then((r) => (entry.tokens = r.input_tokens))
         .catch(() => (entry.tokens = -1))
         .finally(renderFiles);
@@ -139,7 +139,7 @@ async function run() {
 async function uploadRfpPdf(file: File): Promise<string> {
   if (file.size <= MAX_BYTES) return (await postPdf<{ file_id: string }>("/api/upload", file)).file_id;
   const json = { "content-type": "application/json" };
-  const { url, path } = await post<{ url: string; path: string }>("/api/upload-url", "{}", json);
+  const { url, path } = await post<{ url: string; path: string }>("/api/upload", "{}", { ...json, "x-action": "sign" });
   const put = await fetch(url, { method: "PUT", body: file, headers: { "content-type": "application/pdf", "x-upsert": "false" } });
   if (!put.ok) throw new Error(`Couldn't upload ${file.name} (${put.status}).`);
   return (await post<{ file_id: string }>("/api/upload", JSON.stringify({ path, filename: file.name }), json)).file_id;
