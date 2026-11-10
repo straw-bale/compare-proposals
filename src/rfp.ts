@@ -7,8 +7,12 @@ import { askProjectName, confirmDelete, confirmModal, noticeModal } from "./moda
 import { copyShareLink } from "./share";
 import { esc } from "./table";
 
-// Vercel rejects request bodies over 4.5 MB; locally there's no limit.
+// Vercel rejects request bodies over 4.5 MB, so larger PDFs go straight to storage first (see uploadRfpPdf).
+// Locally there's no limit. Storage takes up to 50 MB per file.
 const MAX_BYTES = import.meta.env.PROD ? 4.4 * 1024 * 1024 : Infinity;
+const MAX_STORED = 50 * 1024 * 1024;
+/** tokens value for a large file, which can't be measured before it's uploaded */
+const UNMEASURED = -2;
 
 type Entry = { file: File; tokens?: number; error?: string };
 
@@ -40,6 +44,14 @@ export function initRfp() {
   $("rfp-saved-list").addEventListener("click", onSavedClick);
   $("rfp-results").addEventListener("click", onResultsClick);
   $("rfp-results").addEventListener("submit", addQuestion);
+  $("rfp-results").addEventListener("submit", onEditSubmit);
+  // Escape leaves an open edit form without saving (a dialog on top handles its own Escape first).
+  addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !editing || $("rfp-results").hidden || document.querySelector("dialog[open]")) return;
+    e.preventDefault();
+    editing = null;
+    rerenderInPlace();
+  });
   renderSaved();
 }
 
@@ -50,7 +62,8 @@ function addFiles(list: FileList) {
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     const entry: Entry = { file };
     if (!isPdf) entry.error = "Not a PDF";
-    else if (file.size > MAX_BYTES) entry.error = "Over 4.4 MB, compress it first";
+    else if (file.size > MAX_STORED) entry.error = "Over 50 MB, compress or split it first";
+    else if (file.size > MAX_BYTES) entry.tokens = UNMEASURED;
     else
       post<{ input_tokens: number }>("/api/estimate", file, { "content-type": "application/pdf" })
         .then((r) => (entry.tokens = r.input_tokens))
@@ -76,8 +89,13 @@ function renderFiles() {
   run.disabled = busy || usable.length === 0;
   run.textContent = busy ? "Reviewing…" : "Review";
   const known = usable.every((e) => e.tokens != null && e.tokens >= 0);
-  $("rfp-estimate").textContent =
-    usable.length && known && !busy ? `Estimated cost ${usdRange(estimateRfp(usable.reduce((a, e) => a + e.tokens!, 0)))}` : "";
+  $("rfp-estimate").textContent = busy
+    ? ""
+    : usable.some((e) => e.tokens === UNMEASURED)
+      ? "No cost estimate for files over 4.4 MB"
+      : usable.length && known
+        ? `Estimated cost ${usdRange(estimateRfp(usable.reduce((a, e) => a + e.tokens!, 0)))}`
+        : "";
 }
 
 function setStatus(msg: string, isError = false) {
@@ -96,10 +114,11 @@ async function run() {
   setStatus("Reading…");
   try {
     const files = await Promise.all(
-      usable.map(async (e) => ({ file_id: (await postPdf<{ file_id: string }>("/api/upload", e.file)).file_id, filename: e.file.name })),
+      usable.map(async (e) => ({ file_id: await uploadRfpPdf(e.file), filename: e.file.name })),
     );
     const res = await post<{ rfp: Rfp; usage: Usage }>("/api/rfp", JSON.stringify({ files }), { "content-type": "application/json" });
     current = { id: crypto.randomUUID(), savedAt: Date.now(), files: files.map((f) => f.filename), rfp: res.rfp, costUsd: res.usage.cost_usd };
+    editing = null;
     entries = [];
     setStatus("");
     showResults();
@@ -114,6 +133,16 @@ async function run() {
     busy = false;
     renderFiles();
   }
+}
+
+/** Hands one PDF to Anthropic and returns its file_id: directly when small, through storage when over 4.4 MB. */
+async function uploadRfpPdf(file: File): Promise<string> {
+  if (file.size <= MAX_BYTES) return (await postPdf<{ file_id: string }>("/api/upload", file)).file_id;
+  const json = { "content-type": "application/json" };
+  const { url, path } = await post<{ url: string; path: string }>("/api/upload-url", "{}", json);
+  const put = await fetch(url, { method: "PUT", body: file, headers: { "content-type": "application/pdf", "x-upsert": "false" } });
+  if (!put.ok) throw new Error(`Couldn't upload ${file.name} (${put.status}).`);
+  return (await post<{ file_id: string }>("/api/upload", JSON.stringify({ path, filename: file.name }), json)).file_id;
 }
 
 // ---------- Saved ----------
@@ -157,6 +186,7 @@ export async function openRfp(id: string) {
   const found = (await listRfps()).find((s) => s.id === id);
   if (!found) return noticeModal("Review not found", "It may have been deleted.");
   current = found;
+  editing = null;
   showResults();
 }
 
@@ -224,6 +254,8 @@ function showResults() {
     })
     .join("");
 
+  const notes = (rfp as RfpWithNotes).notes ?? "";
+  const canEditFacts = !Array.isArray(rfp.facts);
   $("rfp-results").innerHTML = `
     <div class="rfp-top">
       <button class="link" data-back>← All RFPs</button>
@@ -236,25 +268,53 @@ function showResults() {
       }</span>
       <span class="tools">${current.projectId ? "" : '<button class="btn" data-start-project>Start project</button>'}<button class="btn" data-share>Share</button><button class="btn" data-print>Print</button></span>
     </div>
-    <h1 class="headline">${esc(rfp.project_name)}</h1>
-    <p class="rfp-sub">${esc(rfp.client)}${
-      due ? ` · <mark>Due ${esc(formatWhen(due))}</mark>` : ""
-    }</p>
-    <p class="overview">${esc(rfp.summary)}</p>
+    ${
+      editing === "header"
+        ? editForm(
+            "header",
+            `${field("Project name", `<input type="text" name="project_name" value="${esc(rfp.project_name)}" />`)}
+             ${field("Client", `<input type="text" name="client" value="${esc(rfp.client)}" />`)}
+             ${field("Summary", `<textarea name="summary" rows="5">${esc(rfp.summary)}</textarea>`)}`,
+          )
+        : `<h1 class="headline">${esc(rfp.project_name)} ${editLink("header")}</h1>
+    <p class="rfp-sub">${esc(rfp.client)}${due ? ` · <mark>Due ${esc(formatWhen(due))}</mark>` : ""}</p>
+    <p class="overview">${esc(rfp.summary)}</p>`
+    }
+    ${
+      editing === "notes"
+        ? `<div class="block"><h2 class="label">Notes</h2>${editForm(
+            "notes",
+            `<textarea name="notes" rows="6" aria-label="Notes" placeholder="What you know beyond the RFP: calls with the client, site visits, past work with them, things to read between the lines…">${esc(notes)}</textarea>`,
+          )}</div>`
+        : notes
+          ? `<div class="block rfp-notes"><h2 class="label">Notes ${editLink("notes")}</h2><p>${esc(notes).replace(/\n/g, "<br />")}</p></div>`
+          : `<p class="rfp-add-notes"><button class="link" data-edit="notes">Add notes</button></p>`
+    }
 
     <div class="rfp-cols">
       <div>
-        ${section("Key dates", `<table class="grid dates">${dates}</table>`, rfp.dates.length)}
-        ${section(
-          "Critical components",
-          `<ul class="watch">${rfp.watch_outs
-            .map((w) => `<li class="${w.critical ? "critical" : ""}"><b>${esc(w.title)}</b>${pg(w.page)}<p>${esc(w.detail)}</p></li>`)
-            .join("")}</ul>`,
-          rfp.watch_outs.length,
-          "None found.",
-        )}
-        ${section(
-          `Questions to ask <button class="link" data-copy>Copy</button>`,
+        ${
+          editing === "dates"
+            ? editSection("Key dates", "dates", rowsHtml("dates", rfp.dates))
+            : section(`Key dates ${editLink("dates")}`, `<table class="grid dates">${dates}</table>`, rfp.dates.length)
+        }
+        ${
+          editing === "watch"
+            ? editSection("Critical components", "watch", rowsHtml("watch", rfp.watch_outs))
+            : section(
+                `Critical components ${editLink("watch")}`,
+                `<ul class="watch">${rfp.watch_outs
+                  .map((w) => `<li class="${w.critical ? "critical" : ""}"><b>${esc(w.title)}</b>${pg(w.page)}<p>${esc(w.detail)}</p></li>`)
+                  .join("")}</ul>`,
+                rfp.watch_outs.length,
+                "None found.",
+              )
+        }
+        ${
+          editing === "questions"
+            ? editSection("Questions to ask", "questions", rowsHtml("questions", rfp.questions))
+            : section(
+          `Questions to ask <button class="link" data-copy>Copy</button> ${editLink("questions")}`,
           (rfp.questions.length
             ? `<ol class="qs">${rfp.questions
                 .map((q, i) => `<li><button class="q-remove" data-remove-q="${i}" title="Remove this question" aria-label="Remove this question">×</button><span>${i + 1}. ${esc(q)}</span></li>`)
@@ -262,20 +322,47 @@ function showResults() {
             : `<p class="none">None.</p>`) +
             `<form class="q-add" data-add-q><input type="text" aria-label="New question" placeholder="Add a question" autocomplete="off" /><button class="btn" type="submit">Add</button></form>`,
           1,
-        )}
+        )
+        }
       </div>
       <div>
-        ${section(
-          "Key facts",
-          `<table class="grid facts">${factsRows(rfp.facts)}</table>`,
-          1,
-        )}
-        ${servicesBlock(rfp)}
-        ${section(
-          "Scoring",
-          `<table class="grid facts">${rfp.scoring.map((s) => `<tr><th scope="row">${esc(s.criterion)}</th><td class="num">${esc(s.weight)}</td></tr>`).join("")}</table>`,
-          rfp.scoring.length,
-        )}
+        ${
+          editing === "facts" && canEditFacts
+            ? editSection(
+                "Key facts",
+                "facts",
+                (Object.keys(RFP_FACTS) as RfpFactKey[])
+                  .map((k) => field(RFP_FACTS[k], `<input type="text" name="fact:${k}" value="${esc(rfp.facts[k]?.value ?? "")}" />`))
+                  .join(""),
+              )
+            : section(`Key facts ${canEditFacts ? editLink("facts") : ""}`, `<table class="grid facts">${factsRows(rfp.facts)}</table>`, 1)
+        }
+        ${
+          editing === "services"
+            ? editSection(
+                "Disciplines requested",
+                "services",
+                `<table class="grid services-edit">${servicesMatrix(rfp)
+                  .map(
+                    (r) => `<tr><th scope="row">${esc(r.discipline)}</th>
+                      <td><select name="req:${esc(r.discipline)}" aria-label="${esc(r.discipline)}">${(Object.keys(REQUESTED) as ServiceRow["requested"][])
+                        .map((k) => `<option value="${k}" ${k === r.requested ? "selected" : ""}>${REQUESTED[k]}</option>`)
+                        .join("")}</select></td>
+                      <td><input type="text" name="detail:${esc(r.discipline)}" value="${esc(r.detail)}" aria-label="${esc(r.discipline)} detail" placeholder="Detail" /></td></tr>`,
+                  )
+                  .join("")}</table>`,
+              )
+            : servicesBlock(rfp)
+        }
+        ${
+          editing === "scoring"
+            ? editSection("Scoring", "scoring", rowsHtml("scoring", rfp.scoring))
+            : section(
+                `Scoring ${editLink("scoring")}`,
+                `<table class="grid facts">${rfp.scoring.map((s) => `<tr><th scope="row">${esc(s.criterion)}</th><td class="num">${esc(s.weight)}</td></tr>`).join("")}</table>`,
+                rfp.scoring.length,
+              )
+        }
       </div>
     </div>
     <p class="estimate">${esc(current.files.join(", "))}${current.costUsd != null ? ` · ${usd(current.costUsd)}` : ""}</p>
@@ -290,7 +377,8 @@ function showResults() {
 const section = (title: string, body: string, count: number, empty = "Not stated in the RFP.") =>
   `<div class="block"><h2 class="label">${title}</h2>${count ? body : `<p class="none">${empty}</p>`}</div>`;
 
-export type ServiceRow = { discipline: Discipline; requested: "yes" | "no" | "unclear" | "unknown"; detail: string; page: number };
+/** "needed": the RFP doesn't ask for it, but the team knows the project needs it (set by hand). */
+export type ServiceRow = { discipline: Discipline; requested: "yes" | "needed" | "no" | "unclear" | "unknown"; detail: string; page: number };
 
 /**
  * Every governing discipline with whether the RFP requests it. Reads reviews in every saved shape: the current
@@ -301,7 +389,7 @@ export type ServiceRow = { discipline: Discipline; requested: "yes" | "no" | "un
 export function projectDisciplines(rfp: Rfp | undefined, removed: string[] = []): Discipline[] {
   if (!rfp) return [];
   return servicesMatrix(rfp)
-    .filter((x) => x.requested === "yes" && !removed.includes(x.discipline))
+    .filter((x) => (x.requested === "yes" || x.requested === "needed") && !removed.includes(x.discipline))
     .map((x) => x.discipline);
 }
 
@@ -322,7 +410,7 @@ export function servicesMatrix(rfp: Rfp): ServiceRow[] {
   return DISCIPLINES.map((d) => byName.get(d) ?? { discipline: d, requested: rest, detail: "", page: 0 });
 }
 
-const REQUESTED = { yes: "Requested", no: "Not requested", unclear: "Unclear", unknown: "Not stated" } as const;
+const REQUESTED = { yes: "Requested", needed: "Not requested, but needed", no: "Not requested", unclear: "Unclear", unknown: "Not stated" } as const;
 
 /** Disciplines requested: every governing discipline, marked requested or not. */
 function servicesBlock(rfp: Rfp): string {
@@ -332,7 +420,7 @@ function servicesBlock(rfp: Rfp): string {
         `<tr class="req-${r.requested}"><th scope="row">${esc(r.discipline)}</th><td class="req">${REQUESTED[r.requested]}</td><td>${esc(r.detail)}${pg(r.page)}</td></tr>`,
     )
     .join("");
-  return section("Disciplines requested", `<table class="grid services">${rows}</table>`, 1);
+  return section(`Disciplines requested ${editLink("services")}`, `<table class="grid services">${rows}</table>`, 1);
 }
 
 /** Key facts in a fixed order. Reviews saved before the fixed list keep their own label/value pairs. */
@@ -362,7 +450,9 @@ async function addQuestion(e: Event) {
 
 async function onResultsClick(e: Event) {
   const t = e.target as HTMLElement;
+  if (onEditClick(t)) return;
   if (t.closest("[data-back]")) {
+    editing = null;
     current = null;
     history.replaceState(null, "", "#rfp");
     $("rfp-results").hidden = true;
@@ -396,4 +486,157 @@ async function onResultsClick(e: Event) {
     t.textContent = "Copied";
     setTimeout(() => (t.textContent = "Copy"), 1500);
   }
+}
+
+// ---------- Editing ----------
+// Any section can be corrected or added to by hand: mistakes, things read between the lines, or information from
+// outside the RFP. Text that's changed loses its page reference, since it no longer comes from the document.
+
+/** The team's own notes, kept with the review (and passed to the AI with it). */
+type RfpWithNotes = Rfp & { notes?: string };
+type EditKey = "header" | "notes" | "dates" | "watch" | "questions" | "facts" | "services" | "scoring";
+let editing: EditKey | null = null;
+
+const editLink = (key: EditKey) => `<button class="link edit-link" data-edit="${key}">Edit</button>`;
+const field = (label: string, control: string) => `<label class="edit-field"><span>${esc(label)}</span>${control}</label>`;
+const editForm = (key: EditKey, inner: string) =>
+  `<form class="rfp-edit" data-edit-form="${key}">${inner}<div class="actions"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-cancel-edit>Cancel</button></div></form>`;
+const editSection = (title: string, key: EditKey, inner: string) => `<div class="block"><h2 class="label">${esc(title)}</h2>${editForm(key, inner)}</div>`;
+
+type RowKey = "dates" | "watch" | "questions" | "scoring";
+const ADD_LABEL: Record<RowKey, string> = { dates: "+ Add date", watch: "+ Add item", questions: "+ Add question", scoring: "+ Add criterion" };
+
+/** One editable row; `item` undefined gives a blank one. The original text and page ride along to keep page refs. */
+function rowHtml(key: RowKey, item?: unknown): string {
+  const keep = (text: string, page: number) => `<input type="hidden" name="orig" value="${esc(text)}" /><input type="hidden" name="page" value="${page}" />`;
+  const remove = `<button type="button" class="link" data-remove-row>Remove</button>`;
+  if (key === "dates") {
+    const d = (item as Rfp["dates"][number] | undefined) ?? { label: "", date: "", when: "", mandatory: false, page: 0 };
+    return `<div class="edit-row edit-date">
+      <input type="text" name="label" value="${esc(d.label)}" placeholder="What (e.g. Proposal due)" aria-label="What" />
+      <input type="date" name="date" value="${esc(d.date)}" aria-label="Date" />
+      <input type="text" name="when" value="${esc(d.when)}" placeholder="Time, or e.g. Spring 2028" aria-label="Time or wording" />
+      <label class="check"><input type="checkbox" name="mandatory" ${d.mandatory ? "checked" : ""} /> Mandatory</label>
+      ${keep(d.label + "|" + d.date + "|" + d.when, d.page)}${remove}</div>`;
+  }
+  if (key === "watch") {
+    const w = (item as Rfp["watch_outs"][number] | undefined) ?? { critical: false, title: "", detail: "", page: 0 };
+    return `<div class="edit-row edit-watch">
+      <input type="text" name="title" value="${esc(w.title)}" placeholder="Title" aria-label="Title" />
+      <textarea name="detail" rows="2" placeholder="Detail" aria-label="Detail">${esc(w.detail)}</textarea>
+      <label class="check"><input type="checkbox" name="critical" ${w.critical ? "checked" : ""} /> Critical</label>
+      ${keep(w.title + "|" + w.detail, w.page)}${remove}</div>`;
+  }
+  if (key === "questions") {
+    const q = (item as string | undefined) ?? "";
+    return `<div class="edit-row edit-question"><textarea name="text" rows="2" aria-label="Question" placeholder="Question">${esc(q)}</textarea>${remove}</div>`;
+  }
+  const s = (item as Rfp["scoring"][number] | undefined) ?? { criterion: "", weight: "" };
+  return `<div class="edit-row edit-scoring">
+    <input type="text" name="criterion" value="${esc(s.criterion)}" placeholder="Criterion" aria-label="Criterion" />
+    <input type="text" name="weight" value="${esc(s.weight)}" placeholder="Weight (e.g. 25%)" aria-label="Weight" />
+    ${remove}</div>`;
+}
+
+const rowsHtml = (key: RowKey, items: unknown[]) =>
+  `<div class="edit-rows" data-rows="${key}">${items.map((it) => rowHtml(key, it)).join("")}</div><button type="button" class="link" data-add-row="${key}">${ADD_LABEL[key]}</button>`;
+
+/** Reads a submitted edit form back into the review. */
+function applyEdit(key: EditKey, form: HTMLFormElement) {
+  if (!current) return;
+  const rfp = current.rfp as RfpWithNotes;
+  const val = (el: ParentNode, name: string) => (el.querySelector<HTMLInputElement>(`[name="${name}"]`)?.value ?? "").trim();
+  const checked = (el: ParentNode, name: string) => !!el.querySelector<HTMLInputElement>(`[name="${name}"]`)?.checked;
+  const rows = [...form.querySelectorAll<HTMLElement>(".edit-row")];
+  // A row keeps its page reference only while its text is unchanged.
+  const pageIf = (row: HTMLElement, text: string) => (val(row, "orig") === text ? Number(val(row, "page")) || 0 : 0);
+
+  if (key === "header") {
+    rfp.project_name = val(form, "project_name") || rfp.project_name;
+    rfp.client = val(form, "client");
+    rfp.summary = val(form, "summary");
+  } else if (key === "notes") {
+    rfp.notes = val(form, "notes") || undefined;
+  } else if (key === "facts") {
+    for (const k of Object.keys(RFP_FACTS) as RfpFactKey[]) {
+      const value = val(form, `fact:${k}`);
+      const before = rfp.facts[k] ?? { value: "", page: 0 };
+      rfp.facts[k] = { value, page: value === before.value ? before.page : 0 };
+    }
+  } else if (key === "services") {
+    const before = servicesMatrix(rfp);
+    (rfp as { services: unknown }).services = before.map((r) => {
+      const requested = val(form, `req:${r.discipline}`) as ServiceRow["requested"];
+      const detail = val(form, `detail:${r.discipline}`);
+      return { discipline: r.discipline, requested, detail, page: detail === r.detail ? r.page : 0 };
+    });
+  } else if (key === "dates") {
+    const dates = rows
+      .map((row) => {
+        const label = val(row, "label");
+        const date = val(row, "date");
+        const when = val(row, "when");
+        return { label, date, when, mandatory: checked(row, "mandatory"), page: pageIf(row, `${label}|${date}|${when}`) };
+      })
+      .filter((d) => d.label || d.date || d.when);
+    // Dated items in date order, then the rest as entered.
+    rfp.dates = [...dates.filter((d) => parseDay(d.date)).sort((a, b) => a.date.localeCompare(b.date)), ...dates.filter((d) => !parseDay(d.date))];
+  } else if (key === "watch") {
+    rfp.watch_outs = rows
+      .map((row) => {
+        const title = val(row, "title");
+        const detail = val(row, "detail");
+        return { critical: checked(row, "critical"), title, detail, page: pageIf(row, `${title}|${detail}`) };
+      })
+      .filter((w) => w.title || w.detail);
+  } else if (key === "questions") {
+    rfp.questions = rows.map((row) => val(row, "text")).filter(Boolean);
+  } else if (key === "scoring") {
+    rfp.scoring = rows.map((row) => ({ criterion: val(row, "criterion"), weight: val(row, "weight") })).filter((s) => s.criterion || s.weight);
+  }
+}
+
+/** Re-renders the review where it was, so opening or closing a form doesn't jump the page. */
+function rerenderInPlace(focusKey?: EditKey) {
+  const y = scrollY;
+  showResults();
+  scrollTo(0, y);
+  if (focusKey) $("rfp-results").querySelector<HTMLElement>(`[data-edit-form="${focusKey}"] input:not([type=hidden]), [data-edit-form="${focusKey}"] textarea`)?.focus();
+}
+
+async function onEditSubmit(e: Event) {
+  const form = (e.target as HTMLElement).closest<HTMLFormElement>("[data-edit-form]");
+  if (!form || !current) return;
+  e.preventDefault();
+  applyEdit(form.getAttribute("data-edit-form") as EditKey, form);
+  editing = null;
+  rerenderInPlace();
+  await saveRfp(current).catch((err) => noticeModal("Not saved", (err as Error).message));
+}
+
+/** Handles the edit links and the buttons inside edit forms. Returns true when it handled the click. */
+function onEditClick(t: HTMLElement): boolean {
+  const open = t.closest("[data-edit]")?.getAttribute("data-edit") as EditKey | null;
+  if (open) {
+    editing = open;
+    rerenderInPlace(open);
+    return true;
+  }
+  if (t.closest("[data-cancel-edit]")) {
+    editing = null;
+    rerenderInPlace();
+    return true;
+  }
+  const add = t.closest("[data-add-row]")?.getAttribute("data-add-row") as RowKey | null;
+  if (add) {
+    const rows = $("rfp-results").querySelector(`[data-rows="${add}"]`)!;
+    rows.insertAdjacentHTML("beforeend", rowHtml(add));
+    rows.lastElementChild?.querySelector<HTMLElement>("input:not([type=hidden]), textarea")?.focus();
+    return true;
+  }
+  if (t.closest("[data-remove-row]")) {
+    t.closest(".edit-row")?.remove();
+    return true;
+  }
+  return false;
 }

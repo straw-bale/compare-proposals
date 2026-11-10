@@ -470,3 +470,38 @@ table.fee-table, .scroll table.fee-table { table-layout: auto; min-width: 560px;
 .fee-cons td:nth-child(-n+2) { min-width: 160px; }
 .fee-table .link { white-space: nowrap; }
 .fee-on-project { margin-top: 16px; }
+
+/* ---------- Editing an RFP review ---------- */
+.edit-link { font-size: 12px; font-weight: 400; margin-left: 8px; }
+.headline .edit-link { font-size: 13px; vertical-align: middle; }
+.rfp-edit { display: grid; gap: 12px; font-size: 14px; }
+.rfp-edit input[type="text"], .rfp-edit input[type="date"], .rfp-edit textarea, .rfp-edit select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); padding: 6px 8px; width: 100%; min-width: 0; outline: none;
+}
+.rfp-edit input:focus, .rfp-edit textarea:focus, .rfp-edit select:focus { border-color: var(--ink); }
+.rfp-edit textarea { resize: vertical; }
+.rfp-edit .actions { margin-top: 4px; }
+.edit-field { display: grid; gap: 4px; }
+.edit-field span { font-weight: 600; font-size: 13px; }
+.edit-rows { display: grid; gap: 10px; }
+.edit-row { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--rule); align-items: center; }
+.edit-date { grid-template-columns: 2fr 150px 1.4fr auto auto; }
+.edit-watch { grid-template-columns: 1fr auto auto; }
+.edit-watch textarea { grid-column: 1 / -1; grid-row: 2; }
+.edit-question { grid-template-columns: 1fr auto; }
+.edit-scoring { grid-template-columns: 2fr 1fr auto; }
+.edit-row .check { display: flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 13px; }
+.edit-row .link { white-space: nowrap; }
+.services-edit th[scope="row"] { width: 26%; vertical-align: middle; }
+.services-edit td { vertical-align: middle; }
+.services-edit td:nth-child(2) { width: 42%; }
+.services-edit td { padding-right: 6px; }
+.services .req-needed td.req { font-weight: 700; font-style: italic; }
+.rfp-notes p { font-size: 14px; margin: 0; }
+.rfp-add-notes { margin: -8px 0 32px; font-size: 14px; }
+@media (max-width: 640px) {
+  .edit-date { grid-template-columns: 1fr 1fr; }
+  .edit-date input[name="label"] { grid-column: 1 / -1; }
+  .edit-scoring { grid-template-columns: 1fr 1fr; }
+}
+@media print { .edit-link, .rfp-add-notes { display: none !important; } }

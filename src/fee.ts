@@ -60,6 +60,14 @@ export async function showFee(id: string | null) {
     const page = $("fee-page");
     page.addEventListener("click", onClick);
     page.addEventListener("input", onInput);
+    // Fires when an edited box is left or Enter is pressed: recalculate then.
+    page.addEventListener("change", (e) => {
+      if (fee && (e.target as HTMLElement).matches(".fee-in")) refresh();
+    });
+    page.addEventListener("keydown", (e) => {
+      const el = e.target as HTMLInputElement;
+      if (e.key === "Enter" && el.matches(".fee-in")) el.blur();
+    });
     addEventListener("pagehide", () => flushFee(true));
   }
   if (fee && fee.id !== id) flushFee();
@@ -621,8 +629,9 @@ function onInput(e: Event) {
       else c.byPhase[field.slice(2)] = n;
     }
   }
+  // Saved as typed, but the figures only recalculate once the entry is finished (see the "change" listener), so
+  // retyping 20 as 22 doesn't flash every total through 2 on the way.
   changed();
-  refresh();
 }
 
 /** Re-renders after a structural change (rows added or removed), keeping the scroll position. */

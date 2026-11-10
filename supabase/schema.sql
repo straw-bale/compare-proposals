@@ -82,3 +82,7 @@ create table if not exists fees (
 );
 alter table fees enable row level security;
 grant select, insert, update, delete on fees to service_role;
+
+-- Large PDF uploads (over Vercel's 4.5 MB limit) pass through a private Storage bucket, "pdf-uploads".
+-- Nothing to run: the app creates the bucket itself the first time it's needed, and deletes each PDF as soon as
+-- it has been handed to Anthropic (anything left behind is removed after a day).
