@@ -139,7 +139,7 @@ export function feeTable(proposals: Sourced[], cmp: Comparison): string {
             const lines = items
               .map((f) => {
                 const tag = BASIS[f.basis];
-                const sub = [items.length > 1 || f.label !== r.label ? f.label : "", tag, f.page ? `p. ${Number(f.page)}` : ""]
+                const sub = [items.length > 1 || f.label !== r.label ? f.label : "", tag, f.page ? `page ${Number(f.page)}` : ""]
                   .filter(Boolean)
                   .join(" · ");
                 return `<div>${feeValue(f)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</div>`;
@@ -199,7 +199,7 @@ export function scopeTable(proposals: Sourced[], cmp: Comparison): string {
           return `<tr class="${cls}"><th scope="row">${esc(it.item)}</th>${cells
             .map((c) => {
               const st = c?.status ?? "not_mentioned";
-              const title = [c?.note, c?.page ? `p. ${Number(c.page)}` : ""].filter(Boolean).join(" · ");
+              const title = [c?.note, c?.page ? `page ${Number(c.page)}` : ""].filter(Boolean).join(" · ");
               return `<td class="st st-${st}" title="${esc(title)}">${STATUS[st]}${
                 c?.note ? `<span class="sub">${esc(c.note)}</span>` : ""
               }</td>`;

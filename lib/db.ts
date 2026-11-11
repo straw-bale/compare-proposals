@@ -2,7 +2,7 @@ import { UserFacingError } from "./claude.js";
 
 // Talks to Supabase's REST API with the secret key. Server-side only; the browser never sees the key.
 
-export const TABLES = { rfps: "rfp_reviews", comparisons: "comparisons", readings: "readings", projects: "projects", consultants: "consultants", schedules: "schedules", fees: "fees" } as const;
+export const TABLES = { rfps: "rfp_reviews", comparisons: "comparisons", readings: "readings", projects: "projects", consultants: "consultants", schedules: "schedules", fees: "fees", settings: "settings", pursuits: "pursuits" } as const;
 export type Table = keyof typeof TABLES;
 
 export function dbConfigured(): boolean {
@@ -45,6 +45,10 @@ export async function put(t: Table, record: Record<string, unknown>): Promise<vo
   if (t === "rfps") row.project = record.project ?? null;
   if (t === "comparisons") row.project = record.projectName ?? null;
   if (t === "projects" || t === "consultants") row.name = record.name ?? null;
+  if (t === "pursuits") {
+    row.rfp_id = record.rfpId ?? null;
+    row.outcome = record.outcome ?? null;
+  }
   if (t === "schedules" || t === "fees") {
     row.title = record.title ?? null;
     row.project_id = record.workspaceProjectId ?? null;

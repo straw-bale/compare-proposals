@@ -86,3 +86,23 @@ grant select, insert, update, delete on fees to service_role;
 -- Large PDF uploads (over Vercel's 4.5 MB limit) pass through a private Storage bucket, "pdf-uploads".
 -- Nothing to run: the app creates the bucket itself the first time it's needed, and deletes each PDF as soon as
 -- it has been handed to Anthropic (anything left behind is removed after a day).
+
+-- World view: the team's settings (one row, id "worldview") and past pursuits (an RFP review, our proposal, the
+-- outcome). Both feed the RFP review; see the World view page.
+create table if not exists settings (
+  id text primary key,
+  data jsonb not null,
+  saved_at timestamptz not null default now()
+);
+alter table settings enable row level security;
+grant select, insert, update, delete on settings to service_role;
+
+create table if not exists pursuits (
+  id text primary key,
+  rfp_id text,
+  outcome text,
+  data jsonb not null,
+  saved_at timestamptz not null default now()
+);
+alter table pursuits enable row level security;
+grant select, insert, update, delete on pursuits to service_role;

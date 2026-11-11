@@ -1,3 +1,4 @@
+import { emptyWorldView, type Pursuit, type WorldView } from "../lib/worldview";
 import type { Comparison, ProjectCheck, Proposal, Rfp } from "../lib/claude";
 import type { Contact } from "./contacts";
 import type { Sourced } from "./table";
@@ -37,6 +38,8 @@ export type SavedRfp = {
   project?: string | null;
   projectId?: string;
   costUsd?: number | null;
+  /** the team's world view this review was judged with, and when that world view was saved */
+  lens?: { text: string; savedAt: number };
 };
 
 const DB = "proposal-comparison";
@@ -47,6 +50,8 @@ const PROJECTS = "projects";
 const CONSULTANTS = "consultants";
 const SCHEDULES = "schedules";
 const FEES = "fees";
+const SETTINGS = "settings";
+const PURSUITS = "pursuits";
 
 /** A consultant firm in the directory. Firms from proposals that aren't saved are listed from the proposals. */
 export type SavedConsultant = {
@@ -85,7 +90,7 @@ export type SavedProject = {
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 7);
+    const req = indexedDB.open(DB, 8);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
@@ -95,6 +100,8 @@ function open(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(CONSULTANTS)) db.createObjectStore(CONSULTANTS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(SCHEDULES)) db.createObjectStore(SCHEDULES, { keyPath: "id" });
       if (!db.objectStoreNames.contains(FEES)) db.createObjectStore(FEES, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(SETTINGS)) db.createObjectStore(SETTINGS, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(PURSUITS)) db.createObjectStore(PURSUITS, { keyPath: "id" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -114,8 +121,8 @@ async function run<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
 // Supabase (through /api/db, so the key stays on the server) when it's configured; otherwise this browser's
 // IndexedDB. The server answers 503 when Supabase isn't set up, and the app then stays local for the session.
 
-type Kind = "comparisons" | "rfps" | "readings" | "projects" | "consultants" | "schedules" | "fees";
-const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS, projects: PROJECTS, consultants: CONSULTANTS, schedules: SCHEDULES, fees: FEES };
+type Kind = "comparisons" | "rfps" | "readings" | "projects" | "consultants" | "schedules" | "fees" | "settings" | "pursuits";
+const LOCAL: Record<Kind, string> = { comparisons: STORE, rfps: RFPS, readings: READINGS, projects: PROJECTS, consultants: CONSULTANTS, schedules: SCHEDULES, fees: FEES, settings: SETTINGS, pursuits: PURSUITS };
 let local = false;
 /** False once the app has fallen back to this browser's storage (Supabase not configured). */
 export const savesShared = () => !local;
@@ -194,7 +201,8 @@ export const listSchedules = () => listRecords<SavedSchedule>("schedules");
 export const deleteSchedule = (id: string) => deleteRecord("schedules", id);
 
 /** A role on the fee (Principal, Project Manager, ...) with its hourly billing rate. */
-export type FeeRole = { id: string; name: string; rate: number | null };
+/** A role on the fee with its hourly rate; short is its abbreviation in table headings (e.g. PM). */
+export type FeeRole = { id: string; name: string; rate: number | null; short?: string };
 export type FeeTask = { id: string; name: string; /** hours by role id */ hours: Record<string, number> };
 export type FeePhase = { id: string; name: string; /** typical share of labor, in percent */ targetShare: number; tasks: FeeTask[] };
 export type FeeConsultant = { id: string; discipline: string; firm: string; /** quoted fee by phase id */ byPhase: Record<string, number> };
@@ -224,6 +232,10 @@ export type SavedFee = {
   markupPercent: number;
   /** reimbursable expenses */
   expenses: number | null;
+  /** the world view an AI draft was made with, and when that world view was saved */
+  lens?: { text: string; savedAt: number };
+  /** the target percent comes from the World view's fee curve, and follows the budget until someone types one */
+  targetFromCurve?: boolean;
   /** set when the fee was drafted by AI from the RFP review: what it assumed, and what the draft cost */
   draft?: { basis: string; assumptions: string[]; costUsd: number | null; at: number };
 };
@@ -252,3 +264,16 @@ export async function hashFile(file: File): Promise<string | null> {
     return null;
   }
 }
+
+// ---------- World view ----------
+
+/** The team's world view, or the starting one (empty text, placeholder fee curve) until someone saves it. */
+export async function getWorldView(): Promise<WorldView> {
+  const saved = (await listRecords<WorldView>("settings")).find((r) => r.id === "worldview");
+  return saved ? { ...emptyWorldView(), ...saved } : emptyWorldView();
+}
+export const saveWorldView = (w: WorldView, keepalive = false) => saveRecord("settings", w, keepalive);
+
+export const listPursuits = () => listRecords<Pursuit>("pursuits");
+export const savePursuit = (p: Pursuit) => saveRecord("pursuits", p);
+export const deletePursuit = (id: string) => deleteRecord("pursuits", id);

@@ -1,5 +1,6 @@
 import { checkAccess } from "../lib/auth.js";
 import { chat, ComparisonSchema, errorResponse, ProposalSchema, UserFacingError } from "../lib/claude.js";
+import { worldViewContext } from "../lib/worldview-server.js";
 import { z } from "zod";
 
 const Body = z.object({
@@ -20,7 +21,7 @@ export async function POST(request: Request): Promise<Response> {
     const parsed = Body.safeParse(await request.json().catch(() => null));
     if (!parsed.success) throw new UserFacingError("Invalid chat request.");
     const { proposals, comparison, projectName, turns } = parsed.data;
-    return Response.json(await chat(proposals, comparison, projectName, turns));
+    return Response.json(await chat(proposals, comparison, projectName, turns, await worldViewContext()));
   } catch (err) {
     return errorResponse(err);
   }

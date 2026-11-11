@@ -7,8 +7,12 @@ export const SCHEDULE_MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 2048;
 
 /** Sends the conversation plus the current schedule; returns the assistant's raw text (the editor parses it). */
-export async function askScheduleAssistant(project: unknown, messages: { role: "user" | "assistant"; content: unknown }[]): Promise<{ text: string; usage: Usage }> {
-  const system = `${SCHEDULE_PROMPT}
+export async function askScheduleAssistant(
+  project: unknown,
+  messages: { role: "user" | "assistant"; content: unknown }[],
+  firm = "",
+): Promise<{ text: string; usage: Usage }> {
+  const system = `${SCHEDULE_PROMPT}${firm ? `\n\n${firm}` : ""}
 
 ## Current Project
 ${JSON.stringify(project ?? null, null, 2)}`;

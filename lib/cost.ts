@@ -75,3 +75,9 @@ export function usd(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 export const usdRange = ([lo, hi]: Range) => (usd(lo) === usd(hi) ? `≈ ${usd(lo)}` : `≈ ${usd(lo)}–${usd(hi)}`);
+
+/** Checking the world view against n past pursuits (their review JSON, the world view and other pursuits; no PDFs). */
+export const estimateFitCheck = (n: number): Range => range([n * 5_000, n * 12_000], [n * 300, n * 1_500]);
+
+/** Suggesting world view changes from the check's results. */
+export const estimateSuggest = (n: number): Range => range([2_000 + n * 400, 4_000 + n * 800], [1_000, 4_000]);

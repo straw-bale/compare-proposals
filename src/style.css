@@ -505,3 +505,147 @@ table.fee-table, .scroll table.fee-table { table-layout: auto; min-width: 560px;
   .edit-scoring { grid-template-columns: 1fr 1fr; }
 }
 @media print { .edit-link, .rfp-add-notes { display: none !important; } }
+
+/* ---------- World view ---------- */
+/* Its link sits apart from the tabs, at the far right of the header: the setting behind everything. */
+a.worldview-link {
+  margin-left: auto; color: var(--ink); text-decoration: none; font-size: 13px; padding: 3px 10px;
+  border: 1px solid var(--ink); align-self: center; white-space: nowrap;
+}
+a.worldview-link:hover, a.worldview-link.on { background: var(--ink); color: var(--bg); }
+@media (max-width: 640px) { a.worldview-link { margin-left: 0; } }
+
+.wv-intro { font-size: 14px; margin: -4px 0 16px; max-width: 640px; }
+#wv-status { display: block; min-height: 18px; font-size: 13px; margin-bottom: 24px; }
+.wv-field textarea { min-height: 84px; }
+.rfp-edit.block { max-width: 760px; }
+
+.wv-chart { position: relative; max-width: 760px; margin-bottom: 12px; }
+.wv-chart > svg { width: 100%; height: auto; display: block; overflow: visible; }
+.wv-chart .grid { stroke: var(--rule); stroke-width: 1; }
+.wv-chart .tick { font-size: 11px; fill: var(--ink); }
+.wv-chart .axis { font-size: 12px; fill: var(--ink); }
+.wv-chart .curve { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.wv-chart .point { fill: var(--bg); stroke: var(--ink); stroke-width: 2; }
+.wv-chart .cross { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
+.dot { stroke-width: 2; }
+.dot-won { fill: var(--site-blue); stroke: var(--bg); }
+.dot-lost { fill: var(--bg); stroke: var(--site-blue); }
+.dot-shortlisted, .dot-no-bid { fill: #9a9a9a; stroke: var(--bg); }
+.wv-tip { position: absolute; top: 4px; background: var(--ink); color: var(--bg); font-size: 12px; padding: 6px 8px; pointer-events: none; max-width: 240px; }
+.wv-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; margin: 4px 0 0; }
+.wv-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.wv-points { max-width: 460px; min-width: 0 !important; }
+
+.wv-pursuit { max-width: 760px; margin-top: 16px; }
+.wv-pursuit select { max-width: 100%; }
+.wv-outcome { border: 0; padding: 0; margin: 0; }
+.wv-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.wv-upload { cursor: pointer; font-size: 13px; }
+.wv-score { font-size: 18px; margin: 0 0 12px; }
+.wv-results td, .wv-results th { vertical-align: top; }
+.wv-results tr.miss td { color: var(--bad); }
+.wv-suggestion { margin-top: 20px; max-width: 760px; }
+.wv-suggestion h3 { font-size: 15px; margin: 0 0 8px; }
+.wv-suggestion pre, .wv-prompt pre { white-space: pre-wrap; font: 13px/1.5 var(--sans); background: var(--soft); padding: 12px 14px; margin: 8px 0 0; }
+.wv-prompt { border-top: 1px solid var(--rule); padding: 10px 0; max-width: 860px; }
+.wv-prompt summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.wv-prompt .note { font-weight: 400; font-size: 12px; margin-left: 8px; }
+
+/* Fit at the top of an RFP review */
+.fit { border-left: 4px solid var(--ink); padding-left: 16px; max-width: 760px; }
+.fit-pass { border-left-color: var(--bad); }
+.fit-verdict { font-size: 22px; font-weight: 700; margin: 0 0 6px; }
+.fit-pass .fit-verdict { color: var(--bad); }
+.fit-reasons { margin: 0; padding-left: 18px; font-size: 14px; }
+.fit-reasons li + li { margin-top: 4px; }
+.fit-lens { font-size: 12px; margin: 10px 0 0; }
+@media print { a.worldview-link { display: none; } }
+
+/* Verdict pill above an RFP review's title */
+.fit-pill {
+  display: inline-block; margin: 0 0 10px; padding: 3px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  text-decoration: none; border: 1.5px solid var(--ink); color: var(--ink); background: var(--bg);
+}
+.fit-pill-pursue { background: var(--ink); color: var(--bg); }
+.fit-pill-pass { border-color: var(--bad); background: var(--bad); color: #fff; }
+.fit-pill:hover { opacity: .85; }
+@media print { .fit-pill { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+
+.wv-view { max-width: 760px; }
+.wv-part { padding: 12px 0; border-top: 1px solid var(--rule); }
+.wv-part:first-child { border-top: 0; padding-top: 0; }
+.wv-part h3 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+.wv-part p { margin: 0; font-size: 14px; }
+.wv-rfp-name { margin: 0; font-size: 15px; }
+.wv-pursuit input[type="file"] { font: inherit; font-size: 14px; }
+.wv-points.facts { max-width: 420px; }
+.wv-total th, .wv-total td { font-weight: 600; border-top: 1px solid var(--ink); }
+
+/* ---------- Fee editor, compact ---------- */
+#fee-page .block { margin-bottom: 32px; }
+#fee-page .fee-table th, #fee-page .fee-table td { padding-top: 4px; padding-bottom: 4px; }
+#fee-page .fee-in { padding: 3px 5px; }
+#fee-page .fee-tasks td:first-child { min-width: 200px; }
+#fee-page .fee-tasks td.num { width: 52px; }
+#fee-page .fee-tasks thead th.num { white-space: nowrap; min-width: 0; cursor: help; }
+#fee-page .fee-cons thead th.num { cursor: help; }
+#fee-page .fee-cons td.num .fee-in { min-width: 72px; }
+#fee-page .fee-short { width: 64px; }
+#fee-page .fee-short .fee-in { text-transform: uppercase; }
+/* Budget and rates side by side when there's room. */
+.fee-top { display: grid; gap: 0 40px; }
+@media (min-width: 1000px) { .fee-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: start; } }
+.fee-top .fee-budget { max-width: none; }
+.fee-top table.fee-table { min-width: 0; }
+/* Phases: one line each, the task table opening below. */
+.fee-phases { border-top: 1px solid var(--rule); }
+#fee-page .fee-phase { margin: 0; border-bottom: 1px solid var(--rule); padding: 6px 0; }
+#fee-page .fee-phase.open { padding-bottom: 12px; }
+#fee-page .fee-phase-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0; }
+#fee-page .fee-phase.open .fee-phase-head { margin-bottom: 6px; }
+#fee-page .fee-phase-name { flex: 1 1 200px; max-width: 320px; }
+.fee-toggle { border: 0; background: none; font-size: 14px; width: 20px; padding: 0; cursor: pointer; color: var(--ink); }
+.fee-phase-sum { margin-left: auto; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fee-add-task { margin-top: 6px; font-size: 13px; }
+#fee-page .fee-table td.num, #fee-page .fee-table th.num { white-space: nowrap; }
+#fee-page .fee-rates td.num .fee-in { width: 72px; }
+/* Narrow screens: wide fee tables keep readable boxes and scroll sideways inside their own box. */
+@media (max-width: 999px) { .fee-top table.fee-table { min-width: 560px; } }
+#fee-page .fee-tasks td.num .fee-in { min-width: 44px; }
+#fee-page .fee-tasks td:first-child .fee-in { min-width: 180px; }
+/* The budget/rates grid never grows wider than the page; its tables scroll inside their own box. */
+.fee-top { grid-template-columns: minmax(0, 1fr); }
+.fee-top > .block { min-width: 0; }
+
+/* Wide screens: budget and rates side by side (after the single-column default above). */
+@media (min-width: 1000px) { .fee-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); } }
+
+/* ---------- Fee editor tables as a spreadsheet ----------
+   Cells with thin gridlines; the boxes inside have no borders of their own and fill the cell, so the page reads
+   like a sheet rather than rows of separate text boxes. The cell being edited gets a blue outline. */
+#fee-page table.fee-table, #fee-page table.fee-budget { border-collapse: collapse; }
+#fee-page .fee-table th, #fee-page .fee-table td,
+#fee-page .fee-budget th, #fee-page .fee-budget td { border: 1px solid var(--rule); padding: 0 6px; height: 28px; }
+#fee-page .fee-table thead th { background: var(--soft); font-size: 12px; font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--ink); }
+#fee-page .fee-table tfoot th, #fee-page .fee-table tfoot td { background: var(--soft); }
+#fee-page .fee-table td:has(> .fee-in), #fee-page .fee-budget td:has(> .fee-in),
+#fee-page .fee-table td:has(> .fee-pair), #fee-page .fee-budget td:has(> .fee-pair) { padding: 0; }
+#fee-page .fee-table .fee-in, #fee-page .fee-budget .fee-in {
+  border: 0; border-radius: 0; background: transparent; height: 28px; padding: 0 6px; width: 100%; min-width: 0;
+}
+#fee-page .fee-table .fee-in:focus, #fee-page .fee-budget .fee-in:focus { outline: 2px solid var(--site-blue); outline-offset: -2px; background: var(--bg); }
+#fee-page .fee-table .fee-in:hover:not(:focus), #fee-page .fee-budget .fee-in:hover:not(:focus) { background: var(--soft); }
+#fee-page .fee-pair { gap: 4px; padding-right: 6px; }
+#fee-page .fee-pair .fee-in.pct { width: 56px; }
+#fee-page .fee-budget th[scope="row"] { font-weight: 400; background: var(--soft); width: 45%; }
+#fee-page .fee-table td:last-child:has(> .link) { width: 24px; text-align: center; padding: 0; }
+#fee-page .fee-table td > .link[title="Remove"] { text-decoration: none; font-size: 15px; color: var(--muted); }
+#fee-page .fee-table td > .link[title="Remove"]:hover { color: var(--bad); }
+#fee-page .fee-tasks td.num .fee-in { min-width: 40px; }
+#fee-page .fee-tasks td:first-child .fee-in { min-width: 180px; }
+/* Phase lines: the name reads as a heading, editable in place. */
+#fee-page .fee-phase-name { border: 0; background: transparent; font-weight: 600; padding: 2px 4px; }
+#fee-page .fee-phase-name:hover { background: var(--soft); }
+#fee-page .fee-phase-name:focus { outline: 2px solid var(--site-blue); background: var(--bg); }
+#fee-page .fee-table th, #fee-page .fee-budget th, #fee-page .fee-budget td { vertical-align: middle; }

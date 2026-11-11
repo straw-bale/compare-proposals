@@ -1,4 +1,5 @@
-import { RFP_FACTS, type Rfp, type RfpFactKey } from "../lib/claude";
+import { RFP_FACTS, type Fit, type Rfp, type RfpFactKey } from "../lib/claude";
+import { reviewContext } from "./worldview";
 import { DISCIPLINES, toDisciplines, type Discipline } from "../lib/disciplines";
 import { estimateRfp, usd, usdRange, type Usage } from "../lib/cost";
 import { post, postPdf } from "./api";
@@ -116,8 +117,21 @@ async function run() {
     const files = await Promise.all(
       usable.map(async (e) => ({ file_id: await uploadRfpPdf(e.file), filename: e.file.name })),
     );
-    const res = await post<{ rfp: Rfp; usage: Usage }>("/api/rfp", JSON.stringify({ files }), { "content-type": "application/json" });
-    current = { id: crypto.randomUUID(), savedAt: Date.now(), files: files.map((f) => f.filename), rfp: res.rfp, costUsd: res.usage.cost_usd };
+    // The team's world view and past pursuits go with every review (see the World view page).
+    const context = await reviewContext();
+    const res = await post<{ rfp: Rfp; usage: Usage }>(
+      "/api/rfp",
+      JSON.stringify({ files, worldView: context.worldView, pursuits: context.pursuits }),
+      { "content-type": "application/json" },
+    );
+    current = {
+      id: crypto.randomUUID(),
+      savedAt: Date.now(),
+      files: files.map((f) => f.filename),
+      rfp: res.rfp,
+      costUsd: res.usage.cost_usd,
+      lens: context.lens,
+    };
     editing = null;
     entries = [];
     setStatus("");
@@ -136,7 +150,7 @@ async function run() {
 }
 
 /** Hands one PDF to Anthropic and returns its file_id: directly when small, through storage when over 4.4 MB. */
-async function uploadRfpPdf(file: File): Promise<string> {
+export async function uploadRfpPdf(file: File): Promise<string> {
   if (file.size <= MAX_BYTES) return (await postPdf<{ file_id: string }>("/api/upload", file)).file_id;
   const json = { "content-type": "application/json" };
   const { url, path } = await post<{ url: string; path: string }>("/api/upload", "{}", { ...json, "x-action": "sign" });
@@ -238,7 +252,7 @@ export function proposalDue(rfp: Rfp) {
   return rfp.dates.find((d) => /proposal|submission|submittal|response|qualifications/i.test(d.label) && /due|deadline|submi/i.test(d.label));
 }
 
-const pg = (n: number) => (Number(n) > 0 ? ` <span class="pg">p. ${Math.trunc(Number(n))}</span>` : "");
+const pg = (n: number) => (Number(n) > 0 ? ` <span class="pg">page ${Math.trunc(Number(n))}</span>` : "");
 
 function showResults() {
   if (!current) return;
@@ -276,7 +290,7 @@ function showResults() {
              ${field("Client", `<input type="text" name="client" value="${esc(rfp.client)}" />`)}
              ${field("Summary", `<textarea name="summary" rows="5">${esc(rfp.summary)}</textarea>`)}`,
           )
-        : `<h1 class="headline">${esc(rfp.project_name)} ${editLink("header")}</h1>
+        : `${fitPill()}<h1 class="headline">${esc(rfp.project_name)} ${editLink("header")}</h1>
     <p class="rfp-sub">${esc(rfp.client)}${due ? ` · <mark>Due ${esc(formatWhen(due))}</mark>` : ""}</p>
     <p class="overview">${esc(rfp.summary)}</p>`
     }
@@ -290,6 +304,8 @@ function showResults() {
           ? `<div class="block rfp-notes"><h2 class="label">Notes ${editLink("notes")}</h2><p>${esc(notes).replace(/\n/g, "<br />")}</p></div>`
           : `<p class="rfp-add-notes"><button class="link" data-edit="notes">Add notes</button></p>`
     }
+
+    ${fitBlock()}
 
     <div class="rfp-cols">
       <div>
@@ -451,6 +467,11 @@ async function addQuestion(e: Event) {
 async function onResultsClick(e: Event) {
   const t = e.target as HTMLElement;
   if (onEditClick(t)) return;
+  if (t.closest("[data-fit-pill]")) {
+    e.preventDefault();
+    document.getElementById("rfp-fit")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
   if (t.closest("[data-back]")) {
     editing = null;
     current = null;
@@ -494,7 +515,7 @@ async function onResultsClick(e: Event) {
 
 /** The team's own notes, kept with the review (and passed to the AI with it). */
 type RfpWithNotes = Rfp & { notes?: string };
-type EditKey = "header" | "notes" | "dates" | "watch" | "questions" | "facts" | "services" | "scoring";
+type EditKey = "fit" | "header" | "notes" | "dates" | "watch" | "questions" | "facts" | "services" | "scoring";
 let editing: EditKey | null = null;
 
 const editLink = (key: EditKey) => `<button class="link edit-link" data-edit="${key}">Edit</button>`;
@@ -551,7 +572,14 @@ function applyEdit(key: EditKey, form: HTMLFormElement) {
   // A row keeps its page reference only while its text is unchanged.
   const pageIf = (row: HTMLElement, text: string) => (val(row, "orig") === text ? Number(val(row, "page")) || 0 : 0);
 
-  if (key === "header") {
+  if (key === "fit") {
+    const verdict = val(form, "verdict") as Fit["verdict"];
+    const reasons = (form.querySelector<HTMLTextAreaElement>('[name="reasons"]')?.value ?? "")
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    (rfp as { fit?: Fit }).fit = { verdict, reasons };
+  } else if (key === "header") {
     rfp.project_name = val(form, "project_name") || rfp.project_name;
     rfp.client = val(form, "client");
     rfp.summary = val(form, "summary");
@@ -640,3 +668,43 @@ function onEditClick(t: HTMLElement): boolean {
   }
   return false;
 }
+
+// ---------- Fit ----------
+
+const VERDICTS: Record<Fit["verdict"], string> = { pursue: "Pursue", consider: "Consider", pass: "Pass" };
+
+/** Whether to pursue it, and the world view it was judged with. Older reviews have no fit and show nothing here. */
+function fitBlock(): string {
+  if (!current) return "";
+  const fit = (current.rfp as { fit?: Fit }).fit;
+  const lens = current.lens;
+  const judged = lens
+    ? `<p class="fit-lens">Judged with the <a class="link" href="#worldview">world view</a>${lens.savedAt ? ` of ${esc(dayText(lens.savedAt))}` : ""}${lens.text ? "" : " (none written yet)"}</p>`
+    : "";
+  if (editing === "fit")
+    return `<div class="block fit"><h2 class="label">Fit</h2>${editForm(
+      "fit",
+      `${field(
+        "Verdict",
+        `<select name="verdict">${(Object.keys(VERDICTS) as Fit["verdict"][])
+          .map((v) => `<option value="${v}" ${fit?.verdict === v ? "selected" : ""}>${VERDICTS[v]}</option>`)
+          .join("")}</select>`,
+      )}${field("Reasons, one per line", `<textarea name="reasons" rows="4">${esc((fit?.reasons ?? []).join("\n"))}</textarea>`)}`,
+    )}</div>`;
+  if (!fit) return "";
+  return `<div class="block fit fit-${fit.verdict}" id="rfp-fit">
+    <h2 class="label">Fit ${editLink("fit")}</h2>
+    <p class="fit-verdict">${VERDICTS[fit.verdict]}</p>
+    ${fit.reasons.length ? `<ul class="fit-reasons">${fit.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+    ${judged}
+  </div>`;
+}
+
+/** The verdict as a pill above the title; it jumps to the Fit section's reasons. None on reviews without a fit. */
+function fitPill(): string {
+  const fit = current && (current.rfp as { fit?: Fit }).fit;
+  if (!fit) return "";
+  return `<a class="fit-pill fit-pill-${fit.verdict}" href="#rfp-fit" data-fit-pill title="See why">${VERDICTS[fit.verdict]}</a>`;
+}
+
+const dayText = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });

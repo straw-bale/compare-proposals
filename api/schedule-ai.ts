@@ -1,6 +1,7 @@
 import { checkAccess } from "../lib/auth.js";
 import { errorResponse, UserFacingError } from "../lib/claude.js";
 import { askScheduleAssistant } from "../lib/schedule-ai.js";
+import { worldViewContext } from "../lib/worldview-server.js";
 
 // The schedule editor's assistant. Behind the access code like every other endpoint.
 const MAX_TURNS = 40;
@@ -19,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
       messages.length <= MAX_TURNS &&
       messages.every((m) => (m?.role === "user" || m?.role === "assistant") && m.content);
     if (!valid) throw new UserFacingError("Invalid conversation.");
-    return Response.json(await askScheduleAssistant(body!.project, messages as { role: "user" | "assistant"; content: unknown }[]));
+    return Response.json(await askScheduleAssistant(body!.project, messages as { role: "user" | "assistant"; content: unknown }[], await worldViewContext()));
   } catch (err) {
     return errorResponse(err);
   }

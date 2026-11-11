@@ -137,3 +137,19 @@ export function proposalTable(f: SavedFee): ProposalTable {
     total: totals.reduce((s, x) => s + x, 0),
   };
 }
+
+/** A single dollar amount ("$4.5 million", "$4,500,000", "4.5M"); ranges and anything unclear give null. */
+export function readAmount(text: string): number | null {
+  const hits = [...text.matchAll(/\$?\s*(\d[\d,]*(?:\.\d+)?)\s*(million|mil|m|thousand|k)?\b/gi)].filter((m) => m[1].replace(/,/g, "").length);
+  if (hits.length !== 1) return null;
+  const n = parseFloat(hits[0][1].replace(/,/g, ""));
+  const unit = (hits[0][2] ?? "").toLowerCase();
+  const value = unit.startsWith("m") ? n * 1e6 : unit === "k" || unit === "thousand" ? n * 1e3 : n;
+  return value >= 10_000 ? value : null;
+}
+
+/** Floor area in square feet ("12,000 SF", "12,000 sq ft", "12,000 GSF"). */
+export function readArea(text: string): number | null {
+  const m = /(\d[\d,]*(?:\.\d+)?)\s*(?:gsf|nsf|sf|sq\.?\s*ft|square\s+feet|gross\s+square\s+feet)\b/i.exec(text);
+  return m ? parseFloat(m[1].replace(/,/g, "")) : null;
+}

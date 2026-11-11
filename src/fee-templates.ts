@@ -1,18 +1,19 @@
 import type { FeePhase, FeeRole } from "./store";
+import type { PhaseShare } from "../lib/worldview";
 
 // Starting points for a fee, by project size. Hours are generic, editable starting numbers.
 
 /** The firm's standard hourly billing rates. Every new fee starts with these; each fee can then change its own. */
 export const DEFAULT_ROLES: FeeRole[] = [
-  { id: "pr", name: "Principal", rate: 225 },
-  { id: "pm", name: "Project Manager", rate: 185 },
-  { id: "pa", name: "Project Architect", rate: 155 },
-  { id: "pid", name: "Project Interior Designer", rate: 155 },
-  { id: "tm", name: "Technology Manager", rate: 185 },
-  { id: "de", name: "Architectural Designer", rate: 135 },
-  { id: "id", name: "Interior Designer", rate: 135 },
-  { id: "ad", name: "Administrative", rate: 100 },
-  { id: "dr", name: "BIM Designer", rate: 80 },
+  { id: "pr", name: "Principal", rate: 225, short: "PR" },
+  { id: "pm", name: "Project Manager", rate: 185, short: "PM" },
+  { id: "pa", name: "Project Architect", rate: 155, short: "PA" },
+  { id: "pid", name: "Project Interior Designer", rate: 155, short: "PID" },
+  { id: "tm", name: "Technology Manager", rate: 185, short: "TM" },
+  { id: "de", name: "Architectural Designer", rate: 135, short: "AD" },
+  { id: "id", name: "Interior Designer", rate: 135, short: "ID" },
+  { id: "ad", name: "Administrative", rate: 100, short: "ADM" },
+  { id: "dr", name: "BIM Designer", rate: 80, short: "BIM" },
 ];
 
 type Hours = Partial<Record<"pr" | "pm" | "pa" | "de" | "dr" | "ad", number>>;
@@ -20,7 +21,7 @@ type Hours = Partial<Record<"pr" | "pm" | "pa" | "de" | "dr" | "ad", number>>;
 /** Standard phases with a typical share of labor (percent) and starter tasks, sized for a medium project. */
 const PHASES: { name: string; targetShare: number; tasks: [string, Hours][] }[] = [
   {
-    name: "Pre-design",
+    name: "Programming",
     targetShare: 5,
     tasks: [
       ["Kickoff and programming", { pr: 8, pm: 16, pa: 16, de: 8 }],
@@ -84,6 +85,36 @@ const PHASES: { name: string; targetShare: number; tasks: [string, Hours][] }[] 
   },
 ];
 
+/** A role's short name for table headings: its own, else its initials (first three letters for one word). */
+export function shortRole(r: FeeRole): string {
+  if (r.short?.trim()) return r.short.trim();
+  const words = r.name.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "—";
+  return words.length === 1 ? words[0].slice(0, 3).toUpperCase() : words.map((w) => w[0]).join("").toUpperCase();
+}
+
+const PHASE_SHORT: Record<string, string> = {
+  programming: "Prog",
+  "pre-design": "Prog",
+  predesign: "Prog",
+  "schematic design": "SD",
+  "design development": "DD",
+  "construction documents": "CD",
+  bidding: "Bid",
+  "bidding and negotiation": "Bid",
+  "construction administration": "CA",
+  closeout: "Close",
+};
+
+/** A phase's short name for table headings (SD, DD, CD…), else its initials. */
+export function shortPhase(name: string): string {
+  const known = PHASE_SHORT[name.trim().toLowerCase()];
+  if (known) return known;
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "—";
+  return words.length === 1 ? words[0].slice(0, 5) : words.map((w) => w[0]).join("").toUpperCase();
+}
+
 export type FeeTemplate = {
   key: string;
   name: string;
@@ -107,17 +138,25 @@ export const templateFor = (budget: number | null) =>
   budget == null ? TEMPLATES[1] : (TEMPLATES.find((t) => budget >= t.range[0] && budget < t.range[1]) ?? TEMPLATES[1]);
 
 /** The template's phases and tasks, with fresh ids and hours rounded to whole hours. */
-export function templatePhases(t: FeeTemplate): FeePhase[] {
-  return PHASES.map((p) => ({
-    id: crypto.randomUUID(),
-    name: p.name,
-    targetShare: p.targetShare,
-    tasks: t.scale
+export function templatePhases(t: FeeTemplate, split?: PhaseShare[]): FeePhase[] {
+  const tasksFor = (p: (typeof PHASES)[number] | undefined) =>
+    p && t.scale
       ? p.tasks.map(([name, hours]) => ({
           id: crypto.randomUUID(),
           name,
           hours: Object.fromEntries(Object.entries(hours).map(([r, h]) => [r, Math.max(1, Math.round(h! * t.scale))])),
         }))
-      : [],
-  }));
+      : [];
+  // The World view's standard split decides the phases and their shares; the template supplies starter tasks for
+  // phases it knows by name (older names count too).
+  if (split?.length) {
+    const key = (n: string) => n.trim().toLowerCase().replace(/^pre-?design$/, "programming");
+    return split.map((s) => ({
+      id: crypto.randomUUID(),
+      name: s.name,
+      targetShare: s.percent,
+      tasks: tasksFor(PHASES.find((p) => key(p.name) === key(s.name))),
+    }));
+  }
+  return PHASES.map((p) => ({ id: crypto.randomUUID(), name: p.name, targetShare: p.targetShare, tasks: tasksFor(p) }));
 }

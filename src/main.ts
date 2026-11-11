@@ -19,6 +19,7 @@ import { getCurrentRfp, initRfp, openRfp } from "./rfp";
 import { showCalls } from "./calls";
 import { showConsultants } from "./consultants";
 import { flushFee, showFee } from "./fee";
+import { showWorldView } from "./worldview";
 import { clearPendingProject, initProject, openProject, pendingProject, showProjectList } from "./project";
 import { setPrintName } from "./print";
 import { copyShareLink, parseHash } from "./share";
@@ -688,7 +689,7 @@ function start() {
 
 // ---------- Tabs ----------
 
-const TABS = ["rfp", "proposals", "fee", "project", "consultants", "calls"];
+const TABS = ["rfp", "proposals", "fee", "project", "consultants", "calls", "worldview"];
 // The schedule screens (#schedule, #schedule/<id>, …) are loaded only when first opened.
 type ScheduleModule = typeof import("./schedule/mount");
 let schedule: ScheduleModule | null = null;
@@ -698,7 +699,7 @@ function showTab() {
   if (onSchedule()) {
     if (!started) return; // waits for the access code; start() calls showTab again
     for (const t of TABS) $(`tab-${t}`).hidden = true;
-    document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === "schedule"));
+    document.querySelectorAll("nav.tabs a, a.worldview-link").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === "schedule"));
     setChatOpen(false);
     flushFee();
     import("./schedule/mount").then((m) => {
@@ -711,7 +712,7 @@ function showTab() {
   const { tab: t, id } = parseHash();
   const tab = TABS.includes(t) ? t : "project";
   for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
-  document.querySelectorAll("nav.tabs a").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === tab));
+  document.querySelectorAll("nav.tabs a, a.worldview-link").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === tab));
   if (tab === "proposals") showIntakeProject();
   if (tab !== "proposals") setChatOpen(false);
   // A shared link (#rfp/<id> or #proposals/<id>) opens that item once the access code has been accepted.
@@ -719,6 +720,7 @@ function showTab() {
   if (!id && tab === "project" && started) showProjectList();
   if (tab === "consultants" && started) showConsultants();
   if (tab === "calls" && started) showCalls();
+  if (tab === "worldview" && started) showWorldView();
   if (tab === "fee" && started) showFee(id);
   else flushFee();
 }
