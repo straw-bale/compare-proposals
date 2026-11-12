@@ -79,7 +79,7 @@ export function formModal(opts: {
                 f.suggestions ? `list="modal-list-${i}"` : ""
               } /></label>${f.suggestions ? `<datalist id="modal-list-${i}">${f.suggestions.map((o) => `<option value="${esc(o)}"></option>`).join("")}</datalist>` : ""}`;
             const on = new Set(f.value.split("\n").map((v) => v.trim()));
-            return `<fieldset class="modal-field modal-options" data-field="${i}"><legend>${esc(f.label)}</legend>${f.options
+            return `<fieldset class="modal-field modal-options${f.single ? " single" : ""}" data-field="${i}"><legend>${esc(f.label)}</legend>${f.options
               .map((o) => `<label><input type="${f.single ? "radio" : "checkbox"}" ${f.single ? `name="modal-choice-${i}"` : ""} value="${esc(o)}" ${on.has(o) ? "checked" : ""} /> ${esc(o)}</label>`)
               .join("")}</fieldset>`;
           })
@@ -202,10 +202,10 @@ export async function askProjectName(title: string, confirm: string, p: { number
   const values = await formModal({
     title,
     fields: [
-      { label: "Project number", value: p.number ?? "", placeholder: "Optional" },
+      { label: "Project number", value: p.number ?? "", placeholder: "26XXXX", required: true },
       { label: "Project name", value: p.name, required: true },
     ],
     confirm,
   });
-  return values && { number: values[0] || undefined, name: values[1] };
+  return values && { number: values[0], name: values[1] };
 }

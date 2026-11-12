@@ -81,3 +81,6 @@ export const estimateFitCheck = (n: number): Range => range([n * 5_000, n * 12_0
 
 /** Suggesting world view changes from the check's results. */
 export const estimateSuggest = (n: number): Range => range([2_000 + n * 400, 4_000 + n * 800], [1_000, 4_000]);
+
+/** A preliminary schedule drafted from an RFP review (its JSON and the world view; no PDFs). */
+export const estimateScheduleDraft = (): Range => range([5_000, 14_000], [1_500, 5_000]);

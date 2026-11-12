@@ -351,6 +351,8 @@ h2.group { font-size: 20px; font-weight: 700; margin: 40px 0 20px; padding-botto
 .pg { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: 4px; white-space: nowrap; }
 mark, .dates tr.due td { background: #ffff00; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 mark { padding: 0 3px; }
+/* A proposal due date that has passed: red instead of yellow. */
+mark.past, .dates tr.due.past td { background: #e8000b; color: #fff; }
 .none { margin: 0; font-size: 14px; }
 .dates td { padding-left: 10px; }
 .dates .when { width: 34%; font-variant-numeric: tabular-nums; }
@@ -482,6 +484,7 @@ table.fee-table, .scroll table.fee-table { table-layout: auto; min-width: 560px;
 .rfp-edit textarea { resize: vertical; }
 .rfp-edit .actions { margin-top: 4px; }
 .edit-field { display: grid; gap: 4px; }
+.edit-field[hidden] { display: none; }
 .edit-field span { font-weight: 600; font-size: 13px; }
 .edit-rows { display: grid; gap: 10px; }
 .edit-row { display: grid; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--rule); align-items: center; }
@@ -649,3 +652,75 @@ a.worldview-link:hover, a.worldview-link.on { background: var(--ink); color: var
 #fee-page .fee-phase-name:hover { background: var(--soft); }
 #fee-page .fee-phase-name:focus { outline: 2px solid var(--site-blue); background: var(--bg); }
 #fee-page .fee-table th, #fee-page .fee-budget th, #fee-page .fee-budget td { vertical-align: middle; }
+
+/* Proposal outline on an RFP review */
+.rfp-outline { max-width: 1100px; }
+.outline-limit { font-size: 14px; margin: -4px 0 10px; font-weight: 600; }
+table.outline { table-layout: auto; }
+.outline th, .outline td { vertical-align: top; }
+.outline .outline-pages { white-space: nowrap; width: 60px; font-variant-numeric: tabular-nums; }
+.outline th[scope="row"] { width: 22%; font-weight: 600; }
+.outline ul { margin: 0; padding-left: 16px; }
+.outline .outline-answers { width: 26%; font-size: 12px; }
+.outline-notes { font-size: 13px; margin: 10px 0 0; padding-left: 18px; }
+.edit-outline { grid-template-columns: 90px 1fr auto; }
+.edit-outline textarea, .edit-outline input[name="answers"] { grid-column: 1 / -1; }
+.wv-sections { margin: 0 0 4px; padding-left: 22px; font-size: 14px; }
+.wv-sections li + li { margin-top: 2px; }
+@media (max-width: 640px) { .outline .outline-answers { display: none; } }
+.outline-format { border: 1px solid var(--ink); padding: 10px 14px; margin: 0 0 14px; max-width: 760px; }
+.outline-format h3 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+.outline-format ul { margin: 0; padding-left: 18px; font-size: 13px; columns: 2 260px; column-gap: 28px; }
+.outline-format li { break-inside: avoid; margin-bottom: 3px; }
+.pg-link { border: 0; background: none; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font: inherit; font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: 4px; }
+.pg-link:hover { color: var(--site-blue); }
+
+/* Firms the team is reaching out to, per discipline, on a project page */
+.reach { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--ink); border-radius: 999px; padding: 1px 4px 1px 9px; margin: 2px 4px 2px 0; font-size: 12px; white-space: nowrap; }
+.reach-x { border: 0; background: none; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 3px; color: var(--muted); }
+.reach-x:hover { color: var(--bad); }
+.reach-add { font-size: 12px; white-space: nowrap; }
+@media print { .reach-add, .reach-x { display: none; } }
+.reach { white-space: normal; max-width: 100%; }
+.reach { border-radius: 12px; }
+
+/* Contact card from a consultant's name on a project page */
+.contact-name { border: 0; background: none; padding: 0; font: inherit; color: var(--ink); cursor: pointer; text-decoration: none; }
+.contact-name:hover { color: var(--site-blue); }
+.contact-card { position: absolute; z-index: 50; width: min(320px, calc(100vw - 24px)); background: var(--bg); border: 1px solid var(--ink); padding: 12px 14px; font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
+.contact-card h3 { font-size: 14px; margin: 0 0 8px; }
+.contact-card p { margin: 8px 0 0; }
+.contact-card .contact { display: block; padding: 6px 0; border-top: 1px solid var(--rule); line-height: 1.5; }
+.contact-card .contact:first-of-type { border-top: 0; padding-top: 0; }
+
+/* What each addendum changed, on an RFP review */
+.rfp-addenda { border-left: 4px solid var(--site-blue); padding-left: 16px; max-width: 900px; }
+.addendum + .addendum { margin-top: 14px; }
+.addendum h3 { font-size: 14px; margin: 0 0 4px; }
+.addendum h3 .note { font-weight: 400; font-size: 12px; margin-left: 6px; }
+.addendum ul { margin: 0; padding-left: 18px; font-size: 14px; }
+.addendum li + li { margin-top: 3px; }
+/* Fee tab: every line and border black (the grey rule colour is swapped for ink on this page only). */
+#fee-page, #tab-fee { --rule: var(--ink); }
+#fee-page .fee-table .fee-in:hover:not(:focus), #fee-page .fee-budget .fee-in:hover:not(:focus) { outline: 1px solid var(--ink); outline-offset: -1px; }
+
+/* Splash page: the mission, very large, under the site header. */
+.splash { min-height: calc(100vh - 260px); display: flex; flex-direction: column; justify-content: center; padding: 48px 0 64px; }
+.splash-line { font-size: clamp(44px, 8.5vw, 120px); font-weight: 800; line-height: 1; letter-spacing: -0.03em; margin: 0 0 40px; max-width: 100%; }
+.splash-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.splash-actions .btn { text-decoration: none; }
+
+/* Splash line typing out */
+.splash-line .tw { visibility: hidden; }
+.splash-line .tw.on { visibility: visible; }
+.tw-caret { display: inline-block; width: 0.08em; height: 0.82em; margin-left: 0.04em; background: currentColor; vertical-align: -0.04em; animation: tw-blink 1s steps(1) infinite; }
+@keyframes tw-blink { 50% { opacity: 0; } }
+.modal-options.single { grid-template-columns: 1fr; }
+
+/* One page of a kept RFP PDF (src/pdf-page.ts). */
+dialog.modal.pdf-page { max-width: 960px; padding: 16px 20px 20px; }
+.pdf-page-bar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 12px; }
+.pdf-page-bar h2 { margin: 0; flex: 1 1 200px; font-size: 15px; overflow-wrap: anywhere; }
+.pdf-page-nav { display: inline-flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: 12px; }
+.pdf-page-nav button { font-size: 18px; line-height: 1; padding: 0 4px; }
+.pdf-page-body canvas { display: block; max-width: 100%; height: auto; border: 1px solid var(--ink); background: #fff; }

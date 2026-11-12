@@ -38,6 +38,19 @@ export type SavedRfp = {
   project?: string | null;
   projectId?: string;
   costUsd?: number | null;
+  /** the original PDFs, kept in storage for 30 days from storedAt so page references can open them */
+  stored?: { name: string; path: string; /** when this file was kept (addenda come later); else storedAt */ at?: number }[];
+  storedAt?: number;
+  /** addenda read into the review after it was made, with what each changed (pages are the addendum's) */
+  addenda?: {
+    number: number;
+    files: string[];
+    at: number;
+    changes: { section: string; change: string; page: number }[];
+    costUsd: number | null;
+    /** where the addendum's first PDF sits in stored, when it was kept */
+    storedIndex?: number;
+  }[];
   /** the team's world view this review was judged with, and when that world view was saved */
   lens?: { text: string; savedAt: number };
 };

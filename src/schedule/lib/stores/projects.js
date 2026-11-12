@@ -110,6 +110,11 @@ export function normalizeProject(project) {
   return p;
 }
 
+// What the assistant may change on a task or legend item (never ids or links).
+const TASK_FIELDS = ['name', 'type', 'color', 'start', 'end', 'date', 'msRef', 'note'];
+const LEGEND_FIELDS = ['text', 'label', 'date', 'color', 'code'];
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
 // Legend sections are always kept in ascending date order (undated items last).
 const LEGEND_SECTIONS = ['deliverables', 'milestones', 'estimates', 'approvals'];
 function _byDate(items) {
@@ -164,7 +169,48 @@ export const projectStore = {
   },
 
   updateProject(id, patch) {
-    _updateAndSave(id, p => ({ ...p, ...patch }));
+    // A schedule's id and project link never change through an edit.
+    const { id: _id, workspaceProjectId: _link, ...safe } = patch ?? {};
+    _updateAndSave(id, p => ({ ...p, ...safe }));
+  },
+
+  /**
+   * Applies the assistant's changes as one edit (one Undo reverses the whole reply), checking each first: the view
+   * can only move its date range, tasks keep their ids, new tasks always get an unused id, and legend changes must
+   * name a real section and item. Anything else in a change is ignored.
+   */
+  applyChanges(projectId, changes) {
+    if (!Array.isArray(changes) || !changes.length) return;
+    _updateAndSave(projectId, p => {
+      let next = { ...p, tasks: [...(p.tasks ?? [])], legend: { ...(p.legend ?? {}) } };
+      const pick = (obj, keys) => Object.fromEntries(Object.entries(obj ?? {}).filter(([k]) => keys.includes(k)));
+      for (const c of changes) {
+        if (c?.type === 'updateView') {
+          const v = pick(c.patch, ['viewStart', 'viewEnd']);
+          for (const k of Object.keys(v)) if (!ISO.test(v[k])) delete v[k];
+          next = { ...next, ...v };
+        } else if (c?.type === 'updateTask') {
+          const patch = _weekdayDate(pick(c.patch, TASK_FIELDS));
+          next.tasks = next.tasks.map(t => (t.id === c.taskId ? { ...t, ...patch } : t));
+        } else if (c?.type === 'addTask' && c.task) {
+          const used = new Set(next.tasks.map(t => t.id));
+          const nextId = Math.max(0, ...used, (next.nextTaskId ?? 1) - 1) + 1;
+          const task = _weekdayDate({ ...pick(c.task, TASK_FIELDS), id: used.has(c.task.id) || typeof c.task.id !== 'number' ? nextId : c.task.id });
+          const at = c.insertAfterId != null ? next.tasks.findIndex(t => t.id === c.insertAfterId) : -1;
+          if (at !== -1) next.tasks.splice(at + 1, 0, task);
+          else next.tasks.push(task);
+          next.nextTaskId = Math.max(...next.tasks.map(t => t.id)) + 1;
+        } else if (c?.type === 'deleteTask') {
+          next.tasks = next.tasks.filter(t => t.id !== c.taskId);
+        } else if (c?.type === 'updateLegendItem' && LEGEND_SECTIONS.includes(c.section)) {
+          const items = next.legend[c.section] ?? [];
+          if (!Number.isInteger(c.index) || !items[c.index]) continue;
+          const patch = _weekdayDate(pick(c.patch, LEGEND_FIELDS));
+          next.legend[c.section] = _byDate(items.map((it, i) => (i === c.index ? { ...it, ...patch } : it)));
+        }
+      }
+      return next;
+    });
   },
 
   updateTask(projectId, taskId, patch) {
@@ -178,10 +224,13 @@ export const projectStore = {
     _updateAndSave(projectId, p => {
       const tasks = [...p.tasks];
       task = _weekdayDate(task);
+      // Never two tasks with the same id (older schedules' nextTaskId can lag behind their tasks).
+      const used = new Set(tasks.map(t => t.id));
+      if (used.has(task.id)) task = { ...task, id: Math.max(0, ...used) + 1 };
       const idx = insertAfterId != null ? tasks.findIndex(t => t.id === insertAfterId) : -1;
       if (idx !== -1) tasks.splice(idx + 1, 0, task);
       else tasks.push(task);
-      return { ...p, tasks, nextTaskId: (p.nextTaskId || 1) + 1 };
+      return { ...p, tasks, nextTaskId: Math.max((p.nextTaskId || 1) + 1, ...tasks.map(t => t.id + 1)) };
     });
   },
 

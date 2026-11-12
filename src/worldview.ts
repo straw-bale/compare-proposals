@@ -95,9 +95,9 @@ function contextFrom(w: WorldView, ps: Pursuit[], all: SavedRfp[], target?: { rf
 export async function reviewContext() {
   try {
     const [w, ps, all] = await Promise.all([getWorldView(), listPursuits(), listRfps()]);
-    return contextFrom(w, ps, all);
+    return { ...contextFrom(w, ps, all), sections: w.proposalSections ?? [] };
   } catch {
-    return { worldView: "", pursuits: [] as string[], lens: { text: "", savedAt: 0 } };
+    return { worldView: "", pursuits: [] as string[], lens: { text: "", savedAt: 0 }, sections: [] as string[] };
   }
 }
 
@@ -126,8 +126,9 @@ export async function showWorldView() {
     page.addEventListener("mouseleave", () => hideChartTip(), true);
     // Escape leaves the world view's edit form without saving (a dialog on top handles its own Escape first).
     addEventListener("keydown", (e) => {
-      if (e.key !== "Escape" || !(editingView || curveDraft || phasesDraft) || page.closest("[hidden]") || document.querySelector("dialog[open]")) return;
+      if (e.key !== "Escape" || !(editingView || curveDraft || phasesDraft || sectionsDraft != null) || page.closest("[hidden]") || document.querySelector("dialog[open]")) return;
       editingView = false;
+      sectionsDraft = null;
       curveDraft = null;
       phasesDraft = null;
       rerender();
@@ -141,12 +142,13 @@ export async function showWorldView() {
 
 // The four parts of the world view. Read-only until someone clicks Edit, and saved only after they confirm, so a
 // stray keystroke can't change what every AI tool is told.
-type ViewKey = "whoWeAre" | "goodPursuit" | "redFlags" | "weighing";
+type ViewKey = "whoWeAre" | "goodPursuit" | "redFlags" | "weighing" | "marketConditions";
 const VIEW_PARTS: [ViewKey, string, string][] = [
   ["whoWeAre", "Who we are", "Project types, sweet-spot size, geography, typical clients"],
   ["goodPursuit", "What makes a good pursuit", "e.g. Repeat clients, lab and higher-ed work, budgets $3M–$20M"],
   ["redFlags", "Deal-breakers and red flags", "e.g. Unlimited duty to defend, design-build bridging documents, fee caps"],
   ["weighing", "How to weigh things", "e.g. A fee cap under 6% is a pass unless it's a repeat client"],
+  ["marketConditions", "Market conditions", "Where the market is, with the date and source (e.g. AIA Architecture Billings Index)"],
 ];
 let editingView = false;
 // The fee curve and the phase split are edited as drafts: nothing changes until Save is confirmed.
@@ -207,6 +209,39 @@ function phasesHtml(): string {
   </form>`;
 }
 
+let sectionsDraft: string | null = null;
+
+function sectionsHtml(): string {
+  const list = wv!.proposalSections ?? [];
+  if (sectionsDraft == null)
+    return `<ol class="wv-sections">${list.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+      <div class="actions"><button class="btn" data-edit-sections>Edit</button></div>`;
+  return `<form class="rfp-edit" data-sections-form>
+    <label class="edit-field"><span>One section per line, in order</span><textarea name="sections" rows="${Math.max(6, list.length + 1)}">${esc(sectionsDraft)}</textarea></label>
+    <div class="actions"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-cancel-sections>Cancel</button></div>
+  </form>`;
+}
+
+async function saveSections(form: HTMLFormElement) {
+  if (!wv) return;
+  const next = (form.querySelector<HTMLTextAreaElement>('[name="sections"]')?.value ?? "")
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (!next.length) return noticeModal("Add a section", "The list needs at least one section.");
+  const ok = await confirmModal({
+    title: "Save the proposal sections?",
+    body: "New RFP reviews outline proposals in this order. Reviews already made keep their outlines.",
+    confirm: "Save",
+  });
+  if (!ok || !wv) return;
+  wv.proposalSections = next;
+  sectionsDraft = null;
+  changed();
+  await save();
+  rerender();
+}
+
 /** Asked before any part of the world view opens for editing, since every AI tool relies on it. */
 const confirmEdit = (what: string) =>
   confirmModal({
@@ -249,7 +284,7 @@ function viewHtml(): string {
     return `<form class="block rfp-edit" data-view-form>
       ${VIEW_PARTS.map(
         ([key, label, placeholder]) =>
-          `<label class="edit-field wv-field"><span>${esc(label)}</span><textarea name="${key}" rows="4" placeholder="${esc(placeholder)}">${esc(wv![key])}</textarea></label>`,
+          `<label class="edit-field wv-field"><span>${esc(label)}</span><textarea name="${key}" rows="${Math.max(4, wv![key].split("\n").length + 1)}" placeholder="${esc(placeholder)}">${esc(wv![key])}</textarea></label>`,
       ).join("")}
       <div class="actions"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" data-cancel-view>Cancel</button></div>
     </form>`;
@@ -302,6 +337,12 @@ function render() {
     <div class="block">
       <h2 class="label">Standard split by phase</h2>
       ${phasesHtml()}
+    </div>
+
+    <div class="block">
+      <h2 class="label">Standard proposal sections</h2>
+      <p class="wv-intro">The order our proposals follow. Only the RFP review's proposal outline uses this; the RFP's own requirements come first.</p>
+      ${sectionsHtml()}
     </div>
 
     <div class="block saved">
@@ -379,6 +420,12 @@ function onInput(e: Event) {
 /** Leaving a box saves it; the chart redraws then too, not on every keystroke. */
 function onChange(e: Event) {
   const el = e.target as HTMLInputElement;
+  if (el.matches("[data-rfp-choice]")) {
+    // The upload is only for "Upload the RFP PDF".
+    const upload = el.closest("form")?.querySelector<HTMLElement>("[data-rfp-upload]");
+    if (upload) upload.hidden = !!el.value;
+    return;
+  }
 
   if (el.dataset.point != null) {
     if (el.dataset.f === "budget" && parseNum(el.value) != null) el.value = parseNum(el.value)!.toLocaleString("en-US");
@@ -494,7 +541,9 @@ function pursuitsHtml(): string {
     .sort((a, b) => b.savedAt - a.savedAt)
     .map((p) => {
       const r = rfpOf(p, rfps);
-      const pct = p.ourFee && p.budget ? ` · ${((p.ourFee / p.budget) * 100).toFixed(1)}%` : "";
+      // The fee chart plots a pursuit only with both numbers; say which is missing rather than leave it off silently.
+      const missing = [!p.budget && "budget", !p.ourFee && "our fee"].filter(Boolean).join(" and ");
+      const pct = missing ? ` · <span class="note">add ${missing} to show it on the chart</span>` : ` · ${((p.ourFee! / p.budget!) * 100).toFixed(1)}%`;
       return `<li>
         <span><b>${esc(r?.project_name ?? "RFP missing")}</b> <span>${esc(r?.client ?? "")}</span></span>
         <span class="when">${OUTCOME_LABEL[p.outcome]}${pct}</span>
@@ -505,8 +554,9 @@ function pursuitsHtml(): string {
 }
 
 /**
- * Adding a past pursuit starts from its PDFs: the past RFP (plus addenda) is read once and kept with the pursuit, so
- * it never shows up on the RFP tab or among projects. Editing a pursuit changes everything but its RFP.
+ * Adding a past pursuit starts from its RFP: either a review already on the RFP tab (copied in, no cost), or its PDFs,
+ * read once and kept with the pursuit so they never show up on the RFP tab or among projects. Editing a pursuit
+ * changes everything but its RFP.
  */
 function pursuitForm(): string {
   const p = pursuits.find((x) => x.id === editingPursuit);
@@ -516,7 +566,7 @@ function pursuitForm(): string {
     ${
       p
         ? `<p class="wv-rfp-name"><b>${esc(r?.project_name ?? "RFP missing")}</b> ${esc(r?.client ?? "")}${p.files?.length ? ` <span class="note">${esc(p.files.join(", "))}</span>` : ""}</p>`
-        : `<label class="edit-field"><span>Past RFP (PDF, with any addenda)</span><input type="file" name="rfpFiles" accept="application/pdf,.pdf" multiple /></label>`
+        : rfpChoice()
     }
     <fieldset class="edit-field wv-outcome"><span>Outcome</span><div class="fee-choice">${OUTCOMES.map(
       (o) => `<label><input type="radio" name="outcome" value="${o}" ${o === outcome ? "checked" : ""} /> ${OUTCOME_LABEL[o]}</label>`,
@@ -530,6 +580,19 @@ function pursuitForm(): string {
     <label class="edit-field"><span>Debrief</span><textarea name="debrief" rows="3" placeholder="What the client said, who won and why">${esc(p?.debrief ?? "")}</textarea></label>
     <div class="actions"><button class="btn primary" type="submit" ${busy ? "disabled" : ""}>Save</button><button class="btn" type="button" data-cancel-pursuit>Cancel</button><span class="status" id="wv-read-status"></span></div>
   </form>`;
+}
+
+/** The past RFP for a new pursuit: a saved review (not one already used by a pursuit), or its PDFs to upload. */
+function rfpChoice(): string {
+  const used = new Set(pursuits.map((x) => x.rfpId).filter(Boolean));
+  const reviews = [...rfps].filter((r) => !used.has(r.id)).sort((a, b) => b.savedAt - a.savedAt);
+  const upload = `<label class="edit-field" data-rfp-upload><span>Past RFP (PDF, with any addenda)</span><input type="file" name="rfpFiles" accept="application/pdf,.pdf" multiple /></label>`;
+  if (!reviews.length) return upload;
+  return `<label class="edit-field"><span>Past RFP</span><select name="rfpId" data-rfp-choice>
+      <option value="">Upload the RFP PDF</option>
+      ${reviews.map((r) => `<option value="${esc(r.id)}">${esc([r.rfp.project_name, r.rfp.client].filter(Boolean).join(" · ") || "Untitled review")}</option>`).join("")}
+    </select></label>
+    ${upload}`;
 }
 
 // Vercel's request limit; larger PDFs go through storage, and can't be measured for an estimate first.
@@ -574,6 +637,10 @@ async function onSubmit(e: Event) {
     e.preventDefault();
     return saveView(view);
   }
+  if ((e.target as HTMLElement).closest("[data-sections-form]")) {
+    e.preventDefault();
+    return saveSections((e.target as HTMLElement).closest<HTMLFormElement>("[data-sections-form]")!);
+  }
   if ((e.target as HTMLElement).closest("[data-curve-form]")) {
     e.preventDefault();
     return saveDraft("curve");
@@ -598,7 +665,14 @@ async function onSubmit(e: Event) {
     budget: parseNum(val("budget")),
     ourFee: parseNum(val("ourFee")),
   };
-  if (!before) {
+  const chosen = !before ? rfps.find((r) => r.id === val("rfpId")) : undefined;
+  if (chosen) {
+    // A saved review: linked, and copied in so the pursuit keeps it if the review is deleted later.
+    record.rfpId = chosen.id;
+    record.rfp = chosen.rfp;
+    record.files = chosen.files;
+    record.budget ??= readAmount((chosen.rfp.facts as Partial<Record<string, { value: string }>>).construction_budget?.value ?? "");
+  } else if (!before) {
     const files = [...(form.querySelector<HTMLInputElement>('[name="rfpFiles"]')?.files ?? [])];
     if (!files.length) return noticeModal("Add the RFP", "Choose the past RFP's PDF first.");
     if (files.some((f) => !/\.pdf$/i.test(f.name) && f.type !== "application/pdf")) return noticeModal("Not a PDF", "The RFP has to be a PDF.");
@@ -794,6 +868,13 @@ async function onClick(e: Event) {
     document.querySelector<HTMLTextAreaElement>("[data-view-form] textarea")?.focus();
   } else if (t.closest("[data-cancel-view]")) {
     editingView = false;
+    rerender();
+  } else if (t.closest("[data-edit-sections]")) {
+    if (!(await confirmEdit("the proposal sections")) || !wv) return;
+    sectionsDraft = (wv.proposalSections ?? []).join("\n");
+    rerender();
+  } else if (t.closest("[data-cancel-sections]")) {
+    sectionsDraft = null;
     rerender();
   } else if (t.closest("[data-edit-curve]")) {
     if (!(await confirmEdit("the fee curve")) || !wv) return;

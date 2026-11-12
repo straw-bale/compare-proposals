@@ -9,6 +9,12 @@ export const BUCKET = "pdf-uploads";
 export const STORED_PATH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/;
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
+/** RFP PDFs kept with their review, so its page references can open the original: rfp/<review id>-<n>.pdf. */
+export const RFP_PATH = /^rfp\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-\d{1,2}\.pdf$/;
+export const rfpPath = (reviewId: string, index: number) => `rfp/${reviewId}-${index}.pdf`;
+/** How long a review's PDFs are kept. */
+export const RFP_KEEP_DAYS = 30;
+
 const base = () => `${process.env.SUPABASE_URL!.replace(/\/rest\/v1\/?$/, "").replace(/\/$/, "")}/storage/v1`;
 const auth = () => {
   const key = process.env.SUPABASE_SECRET_KEY!;
@@ -63,19 +69,41 @@ export async function remove(paths: string[]): Promise<void> {
   if (!res.ok) console.error(`[storage] delete ${res.status}`);
 }
 
-/** Removes uploads older than a day (left behind when a review was abandoned after uploading). Never throws. */
+/** The oldest objects under a prefix older than maxAge, as full paths (at most 100 per call). */
+async function olderThan(prefix: string, maxAge: number): Promise<string[]> {
+  const res = await call(`/object/list/${BUCKET}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ prefix, limit: 100, offset: 0, sortBy: { column: "created_at", order: "asc" } }),
+  });
+  if (!res.ok) return [];
+  const items = (await res.json()) as { name: string; created_at: string | null }[];
+  return items
+    .filter((o) => o.created_at && Date.now() - Date.parse(o.created_at) > maxAge)
+    .map((o) => (prefix ? `${prefix.replace(/\/$/, "")}/${o.name}` : o.name));
+}
+
+/**
+ * Removes passing-through uploads older than a day (left behind when a review was abandoned after uploading), and
+ * kept RFP PDFs older than 30 days. Never throws.
+ */
 export async function cleanupStored(): Promise<void> {
   try {
-    const res = await call(`/object/list/${BUCKET}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ prefix: "", limit: 100, offset: 0, sortBy: { column: "created_at", order: "asc" } }),
-    });
-    if (!res.ok) return;
-    const items = (await res.json()) as { name: string; created_at: string | null }[];
-    const old = items.filter((o) => o.created_at && Date.now() - Date.parse(o.created_at) > MAX_AGE_MS).map((o) => o.name);
-    await remove(old);
+    await remove(await olderThan("", MAX_AGE_MS));
+    await remove(await olderThan("rfp", RFP_KEEP_DAYS * 24 * 60 * 60 * 1000));
   } catch (err) {
     console.error("[storage] cleanup failed:", (err as Error).message);
   }
+}
+
+/** A short-lived link to read one kept PDF (opened in the browser's own PDF viewer). */
+export async function signDownload(path: string, seconds = 600): Promise<string | null> {
+  const res = await call(`/object/sign/${BUCKET}/${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ expiresIn: seconds }),
+  });
+  if (!res.ok) return null; // gone: deleted with its review, or after 30 days
+  const { signedURL } = (await res.json()) as { signedURL: string };
+  return `${base()}${signedURL.startsWith("/") ? "" : "/"}${signedURL}`;
 }

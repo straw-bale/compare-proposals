@@ -2,8 +2,8 @@ import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { costOf, type Usage } from "./cost.js";
-import { DISCIPLINES } from "./disciplines.js";
-import { CHAT_SYSTEM, CHECK_SYSTEM, COMPARE_SYSTEM, EXTRACT_SYSTEM, FEE_DRAFT_SYSTEM, FIT_CHECK_SYSTEM, OWN_PROPOSAL_SYSTEM, RFP_SYSTEM, SUGGEST_SYSTEM } from "./prompts.js";
+import { DISCIPLINES, toDisciplines } from "./disciplines.js";
+import { ADDENDUM_SYSTEM, CHAT_SYSTEM, CHECK_SYSTEM, COMPARE_SYSTEM, EXTRACT_SYSTEM, FEE_DRAFT_SYSTEM, FIT_CHECK_SYSTEM, OWN_PROPOSAL_SYSTEM, RFP_SYSTEM, SCHEDULE_DRAFT_SYSTEM, SUGGEST_SYSTEM } from "./prompts.js";
 
 export const MODEL = "claude-opus-5-5";
 
@@ -158,8 +158,64 @@ export const RfpSchema = z.object({
   watch_outs: z.array(z.object({ critical: z.boolean(), title: z.string(), detail: z.string(), page: z.number() })),
   questions: z.array(z.string()),
   scoring: z.array(z.object({ criterion: z.string(), weight: z.string() })),
+  // Our proposal, page by page, within the RFP's limits (missing on older reviews).
+  outline: z.object({
+    page_limit: z.string(),
+    pages: z.array(z.object({ pages: z.string(), section: z.string(), content: z.array(z.string()), answers: z.string() })),
+    format: z.array(z.object({ rule: z.string(), page: z.number() })),
+    notes: z.array(z.string()),
+  }),
 });
 export type Rfp = z.infer<typeof RfpSchema>;
+
+// What the model writes for a review. The full schema above compiles to a grammar the API rejects as too large, so the
+// model gets a flatter form (facts as a list, disciplines and requested as plain text) that is mapped back to Rfp below.
+const RfpWireSchema = RfpSchema.extend({
+  facts: z.array(z.object({ key: z.string(), value: z.string(), page: z.number() })),
+  services: z.array(z.object({ discipline: z.string(), requested: z.string(), detail: z.string(), page: z.number() })),
+});
+type RfpWire = z.infer<typeof RfpWireSchema>;
+const FACT_KEYS = Object.keys(RFP_FACTS) as RfpFactKey[];
+const REQUESTED = ["yes", "no", "unclear", "needed"];
+
+/** The stored review in the model's form, for passing a saved review back to it (addenda). */
+export function toWire(rfp: unknown): unknown {
+  if (!rfp || typeof rfp !== "object") return rfp;
+  const r = rfp as Record<string, unknown>;
+  const facts = r.facts && typeof r.facts === "object" && !Array.isArray(r.facts) ? r.facts as Record<string, { value?: string; page?: number }> : null;
+  return facts ? { ...r, facts: FACT_KEYS.map((key) => ({ key, value: facts[key]?.value ?? "", page: facts[key]?.page ?? 0 })) } : r;
+}
+
+/** The model's review in the stored form: every fact key, and one entry per discipline on the list, in order. */
+export function fromWire(w: RfpWire): Rfp {
+  const factKey = (k: string) => {
+    const t = k.trim().toLowerCase().replace(/[\s-]+/g, "_");
+    return FACT_KEYS.find((f) => f === t || RFP_FACTS[f].toLowerCase().replace(/\s+/g, "_") === t);
+  };
+  const facts = Object.fromEntries(FACT_KEYS.map((k) => [k, { value: "", page: 0 }])) as Rfp["facts"];
+  for (const f of w.facts) {
+    const k = factKey(f.key);
+    if (k && !facts[k].value) facts[k] = { value: f.value, page: f.page };
+  }
+  const byDiscipline = new Map<string, Rfp["services"][number]>();
+  const exact = (s: RfpWire["services"][number]) => DISCIPLINES.find((x) => x.toLowerCase() === s.discipline.trim().toLowerCase());
+  // Names written exactly as listed first; then a loose name ("MEP") fills each discipline it means that's still empty.
+  for (const s of [...w.services.filter(exact), ...w.services.filter((s) => !exact(s))]) {
+    const requested = s.requested.trim().toLowerCase();
+    for (const d of exact(s) ? [exact(s)!] : toDisciplines([s.discipline])) {
+      if (byDiscipline.has(d)) continue;
+      byDiscipline.set(d, {
+        discipline: d,
+        // "needed" is the team's own mark, kept when an addendum update passes it through.
+        requested: (REQUESTED.includes(requested) ? requested : "unclear") as Rfp["services"][number]["requested"],
+        detail: s.detail,
+        page: s.page,
+      });
+    }
+  }
+  const services = DISCIPLINES.map((d) => byDiscipline.get(d) ?? { discipline: d, requested: "unclear" as const, detail: "", page: 0 });
+  return { ...w, facts, services };
+}
 
 // A project's consultant proposals checked against its RFP review: who covers each requested service, and what's missing or wrong.
 export const ProjectCheckSchema = z.object({
@@ -361,7 +417,7 @@ export async function reviewRfp(files: { file_id: string; filename: string }[], 
   const stream = getClient().beta.messages.stream({
     ...BASE,
     system: withContext(RFP_SYSTEM, context),
-    output_config: { effort: "high", format: betaZodOutputFormat(RfpSchema) },
+    output_config: { effort: "high", format: betaZodOutputFormat(RfpWireSchema) },
     messages: [
       {
         role: "user",
@@ -375,7 +431,72 @@ export async function reviewRfp(files: { file_id: string; filename: string }[], 
   const msg = await stream.finalMessage();
   checkStop(msg);
   if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's RFP review.", 502);
-  return { rfp: msg.parsed_output, usage: usageOf(msg) };
+  return { rfp: fromWire(msg.parsed_output), usage: usageOf(msg) };
+}
+
+const AddendumWireSchema = z.object({
+  rfp: RfpWireSchema,
+  changes: z.array(z.object({ section: z.string(), change: z.string(), page: z.number() })),
+});
+export const AddendumSchema = z.object({
+  rfp: RfpSchema,
+  changes: z.array(z.object({ section: z.string(), change: z.string(), page: z.number() })),
+});
+export type AddendumResult = z.infer<typeof AddendumSchema>;
+
+/** Updates a review for a new addendum: the revised review, and what changed (with the addendum's pages). */
+export async function applyAddendum(
+  files: { file_id: string; filename: string }[],
+  rfp: unknown,
+  number: number,
+  context = "",
+): Promise<AddendumResult & { usage: Usage }> {
+  const stream = getClient().beta.messages.stream({
+    ...BASE,
+    system: withContext(`${RFP_SYSTEM}\n\n${ADDENDUM_SYSTEM}`, context),
+    output_config: { effort: "high", format: betaZodOutputFormat(AddendumWireSchema) },
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...files.map((f) => ({ type: "document" as const, title: `Addendum ${number}: ${f.filename}`, source: { type: "file" as const, file_id: f.file_id } })),
+          { type: "text", text: `Current review (JSON):\n${JSON.stringify(toWire(rfp))}\n\nUpdate it for Addendum ${number}.` },
+        ],
+      },
+    ],
+  });
+  const msg = await stream.finalMessage();
+  checkStop(msg);
+  if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's addendum update.", 502);
+  return { rfp: fromWire(msg.parsed_output.rfp), changes: msg.parsed_output.changes, usage: usageOf(msg) };
+}
+
+export const ScheduleDraftSchema = z.object({
+  tasks: z.array(
+    z.object({
+      name: z.string(),
+      kind: z.enum(["design", "review", "permit", "bidding", "construction", "closeout", "milestone"]),
+      start: z.string(),
+      end: z.string(),
+      date: z.string(),
+    }),
+  ),
+  notes: z.array(z.string()),
+});
+export type ScheduleDraft = z.infer<typeof ScheduleDraftSchema>;
+
+/** A preliminary schedule drafted from an RFP review (JSON only, no PDFs). */
+export async function draftSchedule(rfp: unknown, context = ""): Promise<{ draft: ScheduleDraft; usage: Usage }> {
+  const stream = getClient().beta.messages.stream({
+    ...BASE,
+    system: withContext(SCHEDULE_DRAFT_SYSTEM, context),
+    output_config: { effort: "medium", format: betaZodOutputFormat(ScheduleDraftSchema) },
+    messages: [{ role: "user", content: `RFP review (JSON):\n${JSON.stringify(rfp)}\n\nToday is ${new Date().toISOString().slice(0, 10)}.` }],
+  });
+  const msg = await stream.finalMessage();
+  checkStop(msg);
+  if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's schedule draft.", 502);
+  return { draft: msg.parsed_output, usage: usageOf(msg) };
 }
 
 /** The pursue / consider / pass verdict for a saved RFP review, from its JSON alone (no PDFs). */

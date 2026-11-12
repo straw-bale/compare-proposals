@@ -20,6 +20,7 @@ import { showCalls } from "./calls";
 import { showConsultants } from "./consultants";
 import { flushFee, showFee } from "./fee";
 import { showWorldView } from "./worldview";
+import { typeSplash } from "./splash";
 import { clearPendingProject, initProject, openProject, pendingProject, showProjectList } from "./project";
 import { setPrintName } from "./print";
 import { copyShareLink, parseHash } from "./share";
@@ -689,7 +690,7 @@ function start() {
 
 // ---------- Tabs ----------
 
-const TABS = ["rfp", "proposals", "fee", "project", "consultants", "calls", "worldview"];
+const TABS = ["home", "rfp", "proposals", "fee", "project", "consultants", "calls", "worldview"];
 // The schedule screens (#schedule, #schedule/<id>, …) are loaded only when first opened.
 type ScheduleModule = typeof import("./schedule/mount");
 let schedule: ScheduleModule | null = null;
@@ -710,7 +711,8 @@ function showTab() {
   }
   schedule?.hideSchedule();
   const { tab: t, id } = parseHash();
-  const tab = TABS.includes(t) ? t : "project";
+  // Opening the site (no page in the address, or the name in the header) shows the splash page.
+  const tab = TABS.includes(t) ? t : "home";
   for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
   document.querySelectorAll("nav.tabs a, a.worldview-link").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === tab));
   if (tab === "proposals") showIntakeProject();
@@ -721,6 +723,7 @@ function showTab() {
   if (tab === "consultants" && started) showConsultants();
   if (tab === "calls" && started) showCalls();
   if (tab === "worldview" && started) showWorldView();
+  if (tab === "home") typeSplash();
   if (tab === "fee" && started) showFee(id);
   else flushFee();
 }
@@ -773,7 +776,7 @@ feedbackForm.addEventListener("submit", async (e) => {
   feedbackStatus.classList.remove("error");
   feedbackStatus.textContent = "Sending…";
   try {
-    await post("/api/feedback", JSON.stringify({ message, tab: location.hash.slice(1) || "project" }), { "content-type": "application/json" });
+    await post("/api/feedback", JSON.stringify({ message, tab: location.hash.slice(1) || "home" }), { "content-type": "application/json" });
     feedbackInput.value = "";
     feedbackStatus.textContent = "Thanks!";
     setTimeout(() => setFeedbackOpen(false), 1200);

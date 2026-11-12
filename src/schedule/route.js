@@ -23,6 +23,8 @@ export function parseScheduleHash(hash) {
       params: {
         paper: q.get('paper') ?? 'letter',
         autoprint: q.get('autoprint') === '1',
+        // Opened by the server to make a PDF: use the options given, but don't open the print dialog.
+        pdf: q.get('pdf') === '1',
         showToday: q.get('today') !== '0',
         showLegend: q.get('legend') !== '0',
         title: q.get('title') ?? '',

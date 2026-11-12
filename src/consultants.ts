@@ -27,7 +27,7 @@ let filter = "";
 let initialized = false;
 
 /** "Smith Engineering, Inc." and "smith engineering" are the same firm. */
-const keyOf = (name: string) => firmName(name).toLowerCase().replace(/[^a-z0-9]/g, "");
+export const keyOf = (name: string) => firmName(name).toLowerCase().replace(/[^a-z0-9]/g, "");
 const splitList = (s: string) => s.split(/[,;]/).map((x) => x.trim()).filter(Boolean);
 const uniq = (xs: string[]) => [...new Map(xs.map((x) => [x.toLowerCase(), x])).values()];
 /** Only http(s) links become clickable. */
@@ -103,7 +103,7 @@ function render() {
 
 /** A labeled line on a card, e.g. "Location: Pittsburgh, PA". Value is already escaped HTML. */
 const line = (label: string, html: string) => (html ? `<p><b>${label}:</b> ${html}</p>` : "");
-const siteLink = (website?: string) => {
+export const siteLink = (website?: string) => {
   const url = safeUrl(website);
   return url ? `<a class="link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(new URL(url).hostname.replace(/^www\./, ""))}</a>` : "";
 };
@@ -112,7 +112,7 @@ const COPY_ICON = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="
 const DONE_ICON = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 /** One block per contact: name and role, then email (with a copy icon) and phone. */
-const contactsHtml = (cs: Contact[]) =>
+export const contactsHtml = (cs: Contact[]) =>
   cs
     .map((c) => {
       const who = [c.name, c.role].filter(Boolean).map(esc).join(", ");
@@ -211,7 +211,7 @@ async function editConsultant(start: Partial<SavedConsultant>): Promise<boolean>
   }
 }
 
-async function copyEmail(button: HTMLElement) {
+export async function copyEmail(button: HTMLElement) {
   const email = button.getAttribute("data-copy-email") ?? "";
   try {
     await navigator.clipboard.writeText(email);

@@ -35,8 +35,14 @@
   let overflows   = $derived(contentW > windowW + 1);
   let atEnd       = $derived(scrollLeft + windowW >= contentW - 4);
 
+  // Track the window width while this page is open (removed when it closes, so listeners don't pile up).
+  onMount(() => {
+    const onResize = () => { windowW = window.innerWidth; };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  });
+
   onMount(async () => {
-    window.addEventListener('resize', () => { windowW = window.innerWidth; });
 
     const row = (await listSchedules()).find(s => s.id === data.id);
 

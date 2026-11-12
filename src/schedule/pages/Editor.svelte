@@ -1,5 +1,5 @@
 ﻿<script>
-  import { projectStore, historyDepth } from '../lib/stores/projects.js';
+  import { projectStore, historyDepth, saveError } from '../lib/stores/projects.js';
   import { generateId, parseDate, toISO, MONTHS_SHORT, monthList, totalDays, ZOOM_COL_W, projectDateRange, pxToDateMonth, pxToDatePeriod, toWeekday } from '../lib/utils/dates.js';
   import TaskPanel    from '../lib/components/TaskPanel.svelte';
   import GanttPanel   from '../lib/components/GanttPanel.svelte';
@@ -7,6 +7,8 @@
   import AiSidebar    from '../lib/components/AiSidebar.svelte';
   import PrintPanel   from '../lib/components/PrintPanel.svelte';
   import { goto } from '../lib/nav.js';
+  import { confirmDelete } from '../../modal';
+  import { accessCode } from '../../api';
   import { pointerDrag } from '../lib/utils/pointer.js';
 
   let { data } = $props();
@@ -18,6 +20,15 @@
   projectStore.subscribe(v => { allProjects = v; });
   let project = $derived(allProjects.find(p => p.id === data.id) ?? null);
 
+  // Deletes this schedule after the site's warning, then goes back to its project (or the schedule list).
+  async function deleteSchedule() {
+    if (!project) return;
+    const back = project.workspaceProjectId ? `#project/${encodeURIComponent(project.workspaceProjectId)}` : '#schedule';
+    if (!(await confirmDelete('schedule'))) return;
+    projectStore.deleteProject(project.id);
+    location.hash = back;
+  }
+
   let historyState = $state({});
   historyDepth.subscribe(v => { historyState = v; });
   let canUndo = $derived((historyState[data.id] ?? 0) > 0);
@@ -27,7 +38,7 @@
   }
 
   function handleKeyDown(e) {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !document.querySelector('dialog[open]')) {
       if (document.activeElement?.isContentEditable ||
           document.activeElement?.tagName === 'INPUT' ||
           document.activeElement?.tagName === 'TEXTAREA') return;
@@ -420,24 +431,41 @@
     if (!project || !trueStart || !trueEnd) return;
     const s  = parseDate(trueStart);
     const e  = parseDate(trueEnd);
-    const vs = new Date(s.getFullYear(), s.getMonth(), 1);
-    const ve = new Date(e.getFullYear(), e.getMonth(), 1);
+    // One month of breathing room before the first task and after the last, so nothing sits on the edge.
+    const vs = new Date(s.getFullYear(), s.getMonth() - 1, 1);
+    const ve = new Date(e.getFullYear(), e.getMonth() + 1, 1);
     projectStore.updateProject(data.id, { viewStart: toISO(vs), viewEnd: toISO(ve) });
   }
 
+  // The assistant's whole reply is checked and applied as one edit, so one Undo reverses it.
   function handleAiChanges(changes) {
-    for (const c of changes) {
-      if (c.type === 'updateTask')       projectStore.updateTask(data.id, c.taskId, c.patch);
-      if (c.type === 'addTask')          projectStore.addTask(data.id, c.task, c.insertAfterId ?? null);
-      if (c.type === 'deleteTask')       projectStore.deleteTask(data.id, c.taskId);
-      if (c.type === 'updateView')       projectStore.updateProject(data.id, c.patch);
-      if (c.type === 'updateLegendItem') projectStore.updateLegendItem(data.id, c.section, c.index, c.patch);
-    }
+    projectStore.applyChanges(data.id, changes);
   }
 
   function openPrintPanel() {
     if (project) sessionStorage.setItem('r3a_preview', JSON.stringify(project));
     printPanelOpen = true;
+  }
+
+  /** The schedule as a PDF made on the server: exact paper size, landscape, the same for everyone. */
+  async function downloadPdf({ showToday = true, showLegend = true, paper = 'tabloid' } = {}) {
+    if (!project) return;
+    const today    = new Date();
+    const yyyymmdd = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+    const filename = [project.number?.trim(), yyyymmdd, 'Project Schedule'].filter(Boolean).join('_');
+    const res = await fetch('/api/schedule-pdf', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-access-code': accessCode() },
+      body: JSON.stringify({ schedule: project, paper, showToday, showLegend, filename }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Couldn't make the PDF (${res.status}).`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement('a'), { href: url, download: `${filename}.pdf` });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    printPanelOpen = false;
   }
 
   function printSchedule({ showToday = true, showLegend = true, paper = 'tabloid' } = {}) {
@@ -465,7 +493,7 @@
 
 {#if !project}
   <div class="not-found">
-    <p>Project not found.</p>
+    <p>Schedule not found.</p>
     <button onclick={() => goto('/')}>← Back to Schedules</button>
   </div>
 {:else}
@@ -508,6 +536,10 @@
         </div>
       </div>
 
+      {#if $saveError}
+        <!-- A failed save stays on screen until the next save works, so edits are never lost silently. -->
+        <p class="save-error no-print" role="alert">{$saveError}</p>
+      {/if}
       <div class="hdr-actions no-print">
         <button class="action-btn action-btn-undo" onclick={handleUndo} disabled={!canUndo} title="Undo (Ctrl+Z)">
           Undo
@@ -517,6 +549,9 @@
         </button>
         <button class="action-btn action-btn-share" onclick={shareProject} title="Copy shareable link">
           {shareCopied ? 'Copied!' : 'Share'}
+        </button>
+        <button class="action-btn action-btn-delete" onclick={deleteSchedule} title="Delete this schedule">
+          Delete
         </button>
         <button class="action-btn action-btn-ai" onclick={() => aiOpen = !aiOpen} title="AI Schedule Assistant">
           AI
@@ -646,6 +681,7 @@
       monthCount={ganttMonths.length}
       showTodayDefault={showTodayLine}
       onPrint={printSchedule}
+      onDownload={downloadPdf}
       onClose={() => printPanelOpen = false}
     />
 
@@ -756,6 +792,8 @@
   .action-btn-ai:hover { background: var(--blue); color: #fff; }
   .action-btn-share { transition: border-color .12s, background .12s, color .12s; }
   .action-btn-share:hover { border-color: var(--black); background: var(--black); color: #fff; }
+  .save-error { margin: 0 12px 0 auto; align-self: center; color: #b3261e; font-size: 12px; font-weight: 600; }
+  .action-btn-delete:hover { border-color: #b3261e; background: #b3261e; color: #fff; }
 
   /* Timeline control strip */
   .timeline-bar {

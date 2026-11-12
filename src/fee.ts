@@ -226,7 +226,7 @@ export async function makeFee(project?: SavedProject) {
 const AI_DRAFT = "Draft from the RFP review (AI)";
 
 /** Shows a "please wait" dialog while `work` runs. */
-async function withWaiting<T>(message: string, work: () => Promise<T>): Promise<T> {
+export async function withWaiting<T>(message: string, work: () => Promise<T>): Promise<T> {
   const dialog = document.createElement("dialog");
   dialog.className = "modal";
   dialog.innerHTML = `<h2>${esc(message)}</h2><p>This usually takes under a minute.</p>`;

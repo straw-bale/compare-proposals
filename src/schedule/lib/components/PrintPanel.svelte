@@ -6,12 +6,29 @@
     monthCount       = 0,
     showTodayDefault = true,
     onPrint,
+    onDownload,
     onClose,
   } = $props();
 
+  // Making the PDF on the server takes a few seconds (longer the first time); the button says so meanwhile.
+  let downloading = $state(false);
+  let downloadError = $state('');
+  async function handleDownload() {
+    if (downloading) return;
+    downloading = true;
+    downloadError = '';
+    try {
+      await onDownload?.({ showToday, showLegend, paper });
+    } catch (err) {
+      downloadError = err?.message || 'Couldn\'t make the PDF.';
+    } finally {
+      downloading = false;
+    }
+  }
+
   const PAPERS = {
-    letter:  { w: 1056, h: 816,  usableW: 979,  label: '8.5 × 11 in' },
-    tabloid: { w: 1632, h: 1056, usableW: 1555, label: '11 × 17 in'  },
+    letter:  { w: 816,  h: 1056, usableW: 720,  label: '8.5 × 11 in' },
+    tabloid: { w: 1632, h: 1056, usableW: 1536, label: '11 × 17 in'  },
   };
 
   // Preview pane is up to 880px wide (narrower on small screens); iframe is the
@@ -35,12 +52,16 @@
 
   // Push option changes into the preview iframe via postMessage (no reload).
   $effect(() => {
-    iframeEl?.contentWindow?.postMessage({ showToday, showLegend }, '*');
+    iframeEl?.contentWindow?.postMessage({ showToday, showLegend }, location.origin);
   });
 
   let pg          = $derived(PAPERS[paper]);
-  let previewH    = $derived(Math.round(PREVIEW_W * (pg.h / pg.w)));
-  let iframeScale = $derived(PREVIEW_W / pg.w);
+  // The whole sheet fits the pane both ways, so a portrait page isn't cut off at the bottom.
+  let innerH      = $state(window.innerHeight);
+  let maxPreviewH = $derived(Math.max(240, innerH - 220));
+  let iframeScale = $derived(Math.min(PREVIEW_W / pg.w, maxPreviewH / pg.h));
+  let previewH    = $derived(Math.round(pg.h * iframeScale));
+  let sheetW      = $derived(Math.round(pg.w * iframeScale));
   let scale       = $derived(contentWidth > 0 ? Math.min(1, pg.usableW / contentWidth) : 1);
   let scalePct    = $derived(Math.round(scale * 100));
   let fits        = $derived(scale >= 1);
@@ -52,11 +73,11 @@
 
   function onIframeLoad() {
     // Re-send current options once the iframe finishes loading.
-    iframeEl?.contentWindow?.postMessage({ showToday, showLegend }, '*');
+    iframeEl?.contentWindow?.postMessage({ showToday, showLegend }, location.origin);
   }
 </script>
 
-<svelte:window bind:innerWidth={innerW} onkeydown={(e) => { if (open && e.key === 'Escape') onClose?.(); }} />
+<svelte:window bind:innerWidth={innerW} bind:innerHeight={innerH} onkeydown={(e) => { if (open && e.key === 'Escape') onClose?.(); }} />
 
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -77,8 +98,9 @@
         <div class="preview-col">
           <div class="preview-bg" style:width="{PREVIEW_W}px" style:height="{previewH}px">
             <div class="preview-paper"
-              style:width="{PREVIEW_W}px"
-              style:height="{previewH}px">
+              style:width="{sheetW}px"
+              style:height="{previewH}px"
+              style:margin="0 auto">
               {#if iframeSrc}
                 <iframe
                   bind:this={iframeEl}
@@ -148,8 +170,12 @@
 
       <!-- Footer -->
       <div class="panel-foot">
+        {#if downloadError}<p class="dl-error" role="alert">{downloadError}</p>{/if}
         <button class="btn-cancel" onclick={onClose}>Cancel</button>
-        <button class="btn-print" onclick={handlePrint}>Print to PDF →</button>
+        <!-- Straight to a printer, through the browser's print dialog (a PDF printer there may change the page). -->
+        <button class="btn-cancel" onclick={handlePrint} title="Send to a printer through the browser's print dialog">Print…</button>
+        <!-- The reliable PDF: made on the server, always this paper size, landscape. -->
+        <button class="btn-print" onclick={handleDownload} disabled={downloading}>{downloading ? 'Making PDF…' : 'Download PDF →'}</button>
       </div>
 
     </div>
@@ -317,6 +343,8 @@
     transition: border-color .12s, color .12s;
   }
   .btn-cancel:hover { border-color: #aaa; color: var(--black); }
+  .btn-print:disabled { opacity: .6; cursor: progress; }
+  .dl-error { margin: 0 auto 0 0; align-self: center; color: #b3261e; font-family: 'Barlow', sans-serif; font-size: 12px; font-weight: 600; }
   .btn-print {
     font-family: 'Barlow', sans-serif;
     font-weight: 700; font-size: 11px;

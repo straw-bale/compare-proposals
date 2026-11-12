@@ -15,10 +15,14 @@ export type WorldView = {
   goodPursuit: string;
   redFlags: string;
   weighing: string;
+  /** where the market is (dated, with sources), so judgments reflect current conditions */
+  marketConditions: string;
   /** expected architectural fee, percent of construction, at a few construction budgets */
   feeCurve: FeePoint[];
   /** the standard split of the architectural fee by phase, Programming through Closeout */
   phaseShares: PhaseShare[];
+  /** the firm's usual proposal sections, in order; only the RFP review's proposal outline uses them */
+  proposalSections: string[];
 };
 
 export type Outcome = "won" | "shortlisted" | "lost" | "no bid";
@@ -28,12 +32,12 @@ export const OUTCOMES: Outcome[] = ["won", "shortlisted", "lost", "no bid"];
 export type Pursuit = {
   id: string;
   savedAt: number;
-  /** the past RFP as read from its PDFs when the pursuit was added (kept here, not on the RFP tab) */
+  /** the past RFP: read from its PDFs when the pursuit was added, or copied from the saved review it came from */
   rfp?: Rfp;
-  /** its PDF file names, and what reading them cost */
+  /** its PDF file names, and what reading them cost (none when it came from a saved review) */
   files?: string[];
   reviewCostUsd?: number | null;
-  /** older pursuits pointed at a saved RFP review instead */
+  /** the saved RFP review it came from, if any (older pursuits have only this, without a copy) */
   rfpId?: string;
   outcome: Outcome;
   /** what our proposal emphasised: team, approach, fee basis */
@@ -54,6 +58,21 @@ export const DEFAULT_CURVE: FeePoint[] = [
 ];
 
 /** Placeholder split from the fee templates, for the team to replace. */
+/** The firm's usual proposal, cover letter first (from its standard table of contents). */
+export const DEFAULT_SECTIONS = [
+  "Cover Letter",
+  "Project Understanding",
+  "Project Approach",
+  "Project Team",
+  "Relevant Project Experience",
+  "Project Fee",
+  "Notes + Qualifications",
+];
+
+/** The standard sections as the RFP review's outline sees them. */
+export const sectionsText = (sections: string[] | undefined) =>
+  sections?.length ? `## The firm's standard proposal sections, in order\n${sections.map((s, i) => `${i + 1}. ${s}`).join("\n")}` : "";
+
 export const DEFAULT_PHASES: PhaseShare[] = [
   { name: "Programming", percent: 5 },
   { name: "Schematic Design", percent: 15 },
@@ -64,6 +83,17 @@ export const DEFAULT_PHASES: PhaseShare[] = [
   { name: "Closeout", percent: 2 },
 ];
 
+/**
+ * Starting market conditions, from the AIA's July 2026 reports. Shown until the team edits the World view's
+ * Market conditions; refresh it when new reports come out.
+ */
+export const MARKET_JULY_2026 = `As of July 2026 (AIA Architecture Billings Index, July 2026; AIA Consensus Construction Forecast, July 2026):
+- Billings at architecture firms have been shrinking nationally since early 2023 (index 46.6 in July; below 50 means declining). The Northeast, which includes Pennsylvania, is the weakest region (44.8), for a second straight month.
+- Expect more firms competing for each public RFP and pressure on fees. Be selective, and price carefully rather than chasing work.
+- Nonresidential construction spending is forecast to dip 0.3% in 2026, then grow 3.0% in 2027.
+- Institutional work (education, healthcare, public buildings) is the steadiest: forecast up 2.8% in 2026 and 2.7% in 2027.
+- Commercial growth is almost all data centers; without them it's flat, and office work is falling. Manufacturing is forecast down 11.6% in 2026.`;
+
 export const emptyWorldView = (): WorldView => ({
   id: "worldview",
   savedAt: 0,
@@ -71,8 +101,10 @@ export const emptyWorldView = (): WorldView => ({
   goodPursuit: "",
   redFlags: "",
   weighing: "",
+  marketConditions: MARKET_JULY_2026,
   feeCurve: DEFAULT_CURVE.map((p) => ({ ...p })),
   phaseShares: DEFAULT_PHASES.map((p) => ({ ...p })),
+  proposalSections: [...DEFAULT_SECTIONS],
 });
 
 /**
@@ -109,6 +141,7 @@ export function worldViewText(w: WorldView | null | undefined): string {
     part("What makes a good pursuit", w.goodPursuit),
     part("Deal-breakers and red flags", w.redFlags),
     part("How to weigh things", w.weighing),
+    part("Market conditions", w.marketConditions),
     curve ? `### Expected architectural fee by construction budget\n${curve} (percent of construction; straight-line between points).` : "",
     w.phaseShares?.length
       ? `### Standard split of the architectural fee by phase\n${w.phaseShares.map((p) => `${p.name} ${p.percent}%`).join(", ")}.`

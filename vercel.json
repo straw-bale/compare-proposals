@@ -1,7 +1,41 @@
 {
   "framework": "vite",
   "functions": {
-    "api/*.ts": {
+    "api/auth.ts": {
+      "maxDuration": 300
+    },
+    "api/chat.ts": {
+      "maxDuration": 300
+    },
+    "api/check.ts": {
+      "maxDuration": 300
+    },
+    "api/compare.ts": {
+      "maxDuration": 300
+    },
+    "api/db.ts": {
+      "maxDuration": 300
+    },
+    "api/extract.ts": {
+      "maxDuration": 300
+    },
+    "api/fee-draft.ts": {
+      "maxDuration": 300
+    },
+    "api/feedback.ts": {
+      "maxDuration": 300
+    },
+    "api/rfp.ts": {
+      "maxDuration": 300
+    },
+    "api/schedule-ai.ts": {
+      "maxDuration": 300
+    },
+    "api/schedule-pdf.ts": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
+    },
+    "api/upload.ts": {
       "maxDuration": 300
     }
   },
