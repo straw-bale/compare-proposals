@@ -218,6 +218,17 @@ async function startProject(review: SavedRfp) {
 export const getCurrentRfp = () => current;
 
 /** Opens a saved review by id (from the list or a shared link). */
+/** The RFP tab's first page: the upload and the saved reviews (also where clicking the tab goes). */
+export function showRfpStart() {
+  if (busy) return; // a review is running; it shows itself when done
+  editing = null;
+  current = null;
+  history.replaceState(null, "", "#rfp");
+  $("rfp-results").hidden = true;
+  $("rfp-intake").hidden = false;
+  renderSaved();
+}
+
 export async function openRfp(id: string) {
   const found = (await listRfps()).find((s) => s.id === id);
   if (!found) return noticeModal("Review not found", "It may have been deleted.");
@@ -528,12 +539,7 @@ async function onResultsClick(e: Event) {
     return;
   }
   if (t.closest("[data-back]")) {
-    editing = null;
-    current = null;
-    history.replaceState(null, "", "#rfp");
-    $("rfp-results").hidden = true;
-    $("rfp-intake").hidden = false;
-    renderSaved();
+    showRfpStart();
   } else if (t.closest("[data-print]")) {
     print();
   } else if (t.closest("[data-start-project]") && current) {

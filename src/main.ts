@@ -15,7 +15,7 @@ import {
 } from "./store";
 import { accessCode, post, setUnauthorizedHandler } from "./api";
 import { confirmDelete, noticeModal } from "./modal";
-import { getCurrentRfp, initRfp, openRfp } from "./rfp";
+import { getCurrentRfp, initRfp, openRfp, showRfpStart } from "./rfp";
 import { showCalls } from "./calls";
 import { showConsultants } from "./consultants";
 import { flushFee, showFee } from "./fee";
@@ -149,7 +149,10 @@ filesEl.addEventListener("click", (e) => {
   }
 });
 
-clearBtn.addEventListener("click", () => {
+clearBtn.addEventListener("click", () => resetProposals());
+
+/** The Proposals tab's first page: an empty upload and the saved comparisons (also where clicking the tab goes). */
+function resetProposals() {
   if (busy) return;
   entries = [];
   results.hidden = true;
@@ -160,7 +163,7 @@ clearBtn.addEventListener("click", () => {
   renderSaved();
   setStatus("");
   render();
-});
+}
 
 // ---------- Rendering ----------
 
@@ -696,7 +699,12 @@ type ScheduleModule = typeof import("./schedule/mount");
 let schedule: ScheduleModule | null = null;
 const onSchedule = () => location.hash.startsWith("#schedule");
 
+/** Set by a click on a tab link, so showTab opens that tab's first page. */
+let fromTabClick = false;
+
 function showTab() {
+  const reset = fromTabClick;
+  fromTabClick = false;
   if (onSchedule()) {
     if (!started) return; // waits for the access code; start() calls showTab again
     for (const t of TABS) $(`tab-${t}`).hidden = true;
@@ -715,6 +723,10 @@ function showTab() {
   const tab = TABS.includes(t) ? t : "home";
   for (const t of TABS) $(`tab-${t}`).hidden = t !== tab;
   document.querySelectorAll("nav.tabs a, a.worldview-link").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === tab));
+  if (reset && started) {
+    if (tab === "rfp") showRfpStart();
+    if (tab === "proposals") resetProposals();
+  }
   if (tab === "proposals") showIntakeProject();
   if (tab !== "proposals") setChatOpen(false);
   // A shared link (#rfp/<id> or #proposals/<id>) opens that item once the access code has been accepted.
@@ -741,6 +753,19 @@ $("intake-project").addEventListener("click", (e) => {
   showIntakeProject();
 });
 addEventListener("hashchange", showTab);
+
+// Clicking a tab (or World view) always opens its first page, not the review, comparison or item last open in it.
+// Some pages open items without changing the address, so a click on the current tab's link must reset it too.
+document.addEventListener("click", (e) => {
+  const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("nav.tabs a[data-tab], a.worldview-link");
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const href = a.getAttribute("href") ?? "";
+  fromTabClick = true;
+  if (location.hash === href) {
+    e.preventDefault();
+    showTab();
+  }
+});
 showTab();
 
 // ---------- Feedback ----------
