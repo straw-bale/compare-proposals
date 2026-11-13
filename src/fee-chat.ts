@@ -42,6 +42,7 @@ export function worksheetFor(f: SavedFee) {
     target_percent: f.targetPercent,
     markup_percent: f.markupPercent,
     expenses: f.expenses,
+    duration_months: f.durationMonths ?? null,
     roles: f.roles.map((r) => ({ id: r.id, name: r.name, short: r.short ?? "", rate: r.rate, hours: round(t.roleHours[r.id] ?? 0) })),
     phases,
     consultants: f.consultants.map((c) => ({ discipline: c.discipline, firm: c.firm, fee: round(f.phases.reduce((s, p) => s + (c.byPhase?.[p.id] ?? 0), 0)) })),
@@ -136,6 +137,7 @@ export function applyFeeChanges(f: SavedFee, changes: Change[]): { applied: numb
         f.targetFromCurve = false;
       } else if (c.name === "markup_percent" && n <= 100) f.markupPercent = round(n);
       else if (c.name === "expenses") f.expenses = Math.round(n);
+      else if (c.name === "duration_months" && n > 0 && n <= 240) f.durationMonths = round(n);
       else {
         skipped++;
         continue;

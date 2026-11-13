@@ -10,6 +10,7 @@ import { contextForRfp } from "./worldview";
 import type { FeeDraft } from "../lib/claude";
 import { usd, type Usage } from "../lib/cost";
 import { applyFeeChanges, closeFeeChat, openFeeChat } from "./fee-chat";
+import { feeTimeHtml, hideFeeTimeTip, onFeeTimeMove } from "./fee-time";
 
 // Fee builder: labor by phase (hours per role × the role's rate), consultants with a management markup, and a
 // construction budget to check the total against as a percentage. One fee per project; also usable on its own.
@@ -116,6 +117,8 @@ export async function showFee(id: string | null) {
     const page = $("fee-page");
     page.addEventListener("click", onClick);
     page.addEventListener("input", onInput);
+    page.addEventListener("mousemove", (e) => onFeeTimeMove(e, fee));
+    page.addEventListener("mouseleave", hideFeeTimeTip);
     // Fires when an edited box is left or Enter is pressed: recalculate then.
     page.addEventListener("change", (e) => {
       if (fee && (e.target as HTMLElement).matches(".fee-in")) {
@@ -489,6 +492,12 @@ function render() {
     </div>
 
     <div class="block">
+      <h2 class="label">Hours over time</h2>
+      <div class="fee-pair fee-duration">Project duration ${input('data-k="durationMonths" inputmode="decimal" aria-label="Project duration in months"', numValue(f.durationMonths), "", "months")} months</div>
+      <div id="fee-time"></div>
+    </div>
+
+    <div class="block">
       <h2 class="label">Proposal table</h2>
       <div class="scroll"><div id="fee-proposal"></div></div>
       <div class="actions"><button class="btn" data-copy-table>Copy table</button><span class="status" id="fee-copy-status"></span></div>
@@ -565,6 +574,7 @@ function refresh() {
   const diffPoints = t.percentOfBudget != null && f.targetPercent != null ? t.percentOfBudget - f.targetPercent : null;
   const sign = (n: number) => (n > 0 ? "+" : n < 0 ? "−" : "");
   $("fee-proposal").innerHTML = proposalHtml(proposalTable(f));
+  $("fee-time").innerHTML = feeTimeHtml(f);
   $("fee-summary").innerHTML = `
     <div class="scroll"><table class="grid fee-table fee-summary">
       <thead><tr><th>Phase</th><th class="num">Hours</th><th class="num">Labor</th><th class="num">Share</th><th class="num">Typical</th></tr></thead>
@@ -721,6 +731,10 @@ function onInput(e: Event) {
     }
     else if (k === "markupPercent") f.markupPercent = parseNum(v) ?? 0;
     else if (k === "expenses") f.expenses = parseNum(v);
+    else if (k === "durationMonths") {
+      const n = parseNum(v);
+      f.durationMonths = n != null && n > 0 ? Math.min(n, 240) : null;
+    }
     // A target from the fee curve follows the budget.
     if (k.startsWith("budget.") && f.targetFromCurve) followCurve(f);
   } else if (el.dataset.role) {

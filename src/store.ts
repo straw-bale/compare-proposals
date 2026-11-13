@@ -245,6 +245,8 @@ export type SavedFee = {
   markupPercent: number;
   /** reimbursable expenses */
   expenses: number | null;
+  /** how long the project runs, in months, for the hours-over-time chart */
+  durationMonths?: number | null;
   /** the world view an AI draft was made with, and when that world view was saved */
   lens?: { text: string; savedAt: number };
   /** the target percent comes from the World view's fee curve, and follows the budget until someone types one */
