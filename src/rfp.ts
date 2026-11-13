@@ -335,7 +335,10 @@ function showResults() {
             ? `Project: <b>${esc(current.project)}</b>`
             : ""
       }</span>
-      <span class="tools">${current.projectId ? "" : '<button class="btn" data-start-project>Start project</button>'}<button class="btn" data-share>Share</button><button class="btn" data-print>Print</button></span>
+      <span class="tools">${current.projectId ? "" : '<button class="btn" data-start-project>Start project</button>'}${
+        // The original RFP (the first file), while it's kept; opens the whole PDF in a new tab.
+        isKept(current.stored?.[0]) ? `<button class="btn" data-open-file="0" title="Open ${esc(current.stored![0].name)}">View RFP</button>` : ""
+      }<button class="btn" data-share>Share</button><button class="btn" data-print>Print</button></span>
     </div>
     ${
       editing === "header"

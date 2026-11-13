@@ -46,11 +46,15 @@ function undo() {
   checkpoint(); // an edit still being typed counts as finished
   const prev = undoStack.pop();
   if (!prev) return;
+  summaryBefore = null;
   fee = JSON.parse(prev) as SavedFee;
   committed = prev;
   rerender(false);
   changed();
 }
+
+/** The summary as it was when Edit was clicked (JSON; "" when there was none), while it's being edited; else null. */
+let summaryBefore: string | null = null;
 
 /** phases whose task tables are open (the rest show one summary line each) */
 const openPhases = new Set<string>();
@@ -121,7 +125,8 @@ export async function showFee(id: string | null) {
     page.addEventListener("mouseleave", hideFeeTimeTip);
     // Fires when an edited box is left or Enter is pressed: recalculate then.
     page.addEventListener("change", (e) => {
-      if (fee && (e.target as HTMLElement).matches(".fee-in")) {
+      // Summary lines count only when Save is clicked, so leaving one mid-edit isn't an undo step.
+      if (fee && (e.target as HTMLElement).matches(".fee-in:not(.fee-sum-in)")) {
         refresh();
         checkpoint();
       }
@@ -136,7 +141,11 @@ export async function showFee(id: string | null) {
     });
     page.addEventListener("keydown", (e) => {
       const el = e.target as HTMLInputElement;
-      if (e.key === "Enter" && el.matches(".fee-in")) el.blur();
+      if (e.key === "Escape" && summaryBefore !== null && !document.querySelector("dialog[open]")) return cancelSummaryEdit();
+      if (e.key === "Enter" && el.matches(".fee-in")) {
+        e.preventDefault(); // summary lines wrap but stay one line each
+        el.blur();
+      }
     });
     addEventListener("pagehide", () => flushFee(true));
   }
@@ -159,6 +168,7 @@ function openAssistant() {
     },
     apply: (changes, assumptions) => {
       if (!fee) return { applied: 0, skipped: changes.length };
+      if (summaryBefore !== null && assumptions.some((a) => a.trim())) cancelSummaryEdit(); // the assistant's list replaces an unsaved edit
       checkpoint(); // anything typed before asking is its own step
       const result = applyFeeChanges(fee, changes);
       result.phases.forEach((id) => openPhases.add(id)); // show what changed
@@ -374,6 +384,7 @@ async function openFee(id: string) {
   }
   if (fee?.id !== id) {
     fee = found;
+    summaryBefore = null;
     undoStack = [];
     // A fee with no hours yet opens every phase, ready to fill in; otherwise each phase is one line.
     openPhases.clear();
@@ -495,6 +506,7 @@ function render() {
       <div class="actions"><button class="btn" data-copy-table>Copy table</button><span class="status" id="fee-copy-status"></span></div>
     </div>`;
   refresh();
+  fitSummaryLines($("fee-page"));
 }
 
 const shortDate = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -506,9 +518,13 @@ const shortDate = (ms: number) => new Date(ms).toLocaleDateString("en-US", { mon
 function summaryHtml(f: SavedFee): string {
   const d = f.draft;
   const fromRfp = !!d && d.source !== "notes";
-  const line = (key: string, value: string, removable: boolean) =>
-    `<li class="fee-sum-line">${input(`data-sum="${key}" aria-label="Summary line"`, value, "fee-sum-in")}${removable ? `<button class="link" data-del-sum="${key}" aria-label="Remove line" title="Remove">×</button>` : ""}</li>`;
-  const lines = d ? [...(d.basis ? [line("basis", d.basis, true)] : []), ...d.assumptions.map((a, i) => line(`a:${i}`, a, true))] : [];
+  const editing = summaryBefore !== null;
+  // Read as plain text; Edit (with Save / Cancel, Escape to cancel) makes the lines editable, so nothing changes by accident.
+  const line = (key: string, value: string) =>
+    editing
+      ? `<li class="fee-sum-line"><textarea class="fee-in fee-sum-in" data-sum="${key}" rows="1" aria-label="Summary line" placeholder="Add a line">${esc(value)}</textarea><button class="link" data-del-sum="${key}" aria-label="Remove line" title="Remove">×</button></li>`
+      : `<li>${esc(value)}</li>`;
+  const lines = d ? [...(d.basis ? [line("basis", d.basis)] : []), ...d.assumptions.map((a, i) => (editing || a.trim() ? line(`a:${i}`, a) : ""))].filter(Boolean) : [];
   const notes = [
     fromRfp && f.lens
       ? `Drafted with the <a class="link" href="#worldview">world view</a>${f.lens.savedAt ? ` of ${esc(shortDate(f.lens.savedAt))}` : ""}${f.lens.text ? "" : " (none written yet)"}`
@@ -517,9 +533,9 @@ function summaryHtml(f: SavedFee): string {
     d?.revisedAt ? `Revised by the AI assistant ${esc(shortDate(d.revisedAt))}` : "",
   ].filter(Boolean);
   return `<div class="block fee-draft">
-      <h2 class="label">${fromRfp ? "Architecture and interiors drafted by AI from the RFP review. Check every number." : "Assumptions"}</h2>
-      ${lines.length ? `<ul class="fee-sum">${lines.join("")}</ul>` : ""}
-      <button class="link" data-add-sum>+ Add line</button>
+      <h2 class="label">${fromRfp ? "Architecture and interiors drafted by AI from the RFP review. Check every number." : "Assumptions"}${editing ? "" : ` <button class="link edit-link" data-edit-sum>Edit</button>`}</h2>
+      ${lines.length ? `<ul class="fee-sum${editing ? " editing" : ""}">${lines.join("")}</ul>` : editing ? "" : `<p class="none">None yet.</p>`}
+      ${editing ? `<button class="link" data-add-sum>+ Add line</button><div class="actions"><button class="btn primary" data-save-sum>Save</button><button class="btn" data-cancel-sum>Cancel</button></div>` : ""}
       ${notes.length ? `<p class="note">${notes.join(" · ")}</p>` : ""}
     </div>`;
 }
@@ -729,8 +745,26 @@ function changed() {
   }, 800);
 }
 
+/** Puts the summary back as it was before Edit. */
+function cancelSummaryEdit() {
+  if (!fee || summaryBefore === null) return;
+  if (summaryBefore) fee.draft = JSON.parse(summaryBefore) as SavedFee["draft"];
+  else delete fee.draft;
+  summaryBefore = null;
+  rerender(false);
+}
+
+/** Summary lines wrap like text: each grows to fit (browsers without field-sizing: content). */
+function fitSummaryLines(root: ParentNode = document) {
+  root.querySelectorAll<HTMLTextAreaElement>("textarea.fee-sum-in").forEach((t) => {
+    t.style.height = "auto";
+    t.style.height = `${t.scrollHeight}px`;
+  });
+}
+
 function onInput(e: Event) {
   const el = e.target as HTMLInputElement;
+  if (el.matches("textarea.fee-sum-in")) fitSummaryLines(el.parentElement!);
   if (!fee || !el.matches(".fee-in, [data-budget-by]")) return;
   if (el.matches("[data-budget-by]")) {
     fee.budget.by = el.value === "area" ? "area" : "amount";
@@ -763,6 +797,7 @@ function onInput(e: Event) {
     const key = el.dataset.sum;
     if (key === "basis") f.draft.basis = v;
     else if (key.startsWith("a:")) f.draft.assumptions[Number(key.slice(2))] = v;
+    return; // kept when Save is clicked
   } else if (el.dataset.role) {
     const r = f.roles.find((x) => x.id === el.dataset.role);
     if (!r) return;
@@ -858,16 +893,33 @@ async function onClick(e: Event) {
     openPhases.clear();
     if (!allOpen) f.phases.forEach((p) => openPhases.add(p.id));
     rerender(false);
+  } else if (t.closest("[data-edit-sum]")) {
+    summaryBefore = f.draft ? JSON.stringify(f.draft) : "";
+    if (!f.draft?.basis && !f.draft?.assumptions.some((a) => a.trim())) {
+      f.draft ??= { basis: "", assumptions: [], costUsd: null, at: Date.now(), source: "notes" };
+      f.draft.assumptions.push(""); // an empty summary starts with a line to type in
+    }
+    rerender(false);
+    document.querySelector<HTMLTextAreaElement>("#fee-page [data-sum]")?.focus();
   } else if (t.closest("[data-add-sum]")) {
     f.draft ??= { basis: "", assumptions: [], costUsd: null, at: Date.now(), source: "notes" };
     f.draft.assumptions.push("");
-    rerender();
-    const boxes = document.querySelectorAll<HTMLInputElement>("#fee-page [data-sum]");
+    rerender(false);
+    const boxes = document.querySelectorAll<HTMLTextAreaElement>("#fee-page [data-sum]");
     boxes[boxes.length - 1]?.focus();
   } else if ((id = attr("data-del-sum")) && f.draft) {
     if (id === "basis") f.draft.basis = "";
     else f.draft.assumptions.splice(Number(id.slice(2)), 1);
-    rerender();
+    rerender(false);
+  } else if (t.closest("[data-save-sum]")) {
+    if (f.draft) {
+      f.draft.basis = f.draft.basis.trim();
+      f.draft.assumptions = f.draft.assumptions.map((a) => a.trim()).filter(Boolean);
+    }
+    summaryBefore = null;
+    rerender(); // saved, and one Undo step
+  } else if (t.closest("[data-cancel-sum]")) {
+    cancelSummaryEdit();
   } else if (t.closest("[data-add-role]")) {
     f.roles.push({ id: crypto.randomUUID(), name: "New role", rate: null });
     rerender();

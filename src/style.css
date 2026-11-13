@@ -740,10 +740,21 @@ dialog.modal.pdf-page { max-width: 960px; padding: 16px 20px 20px; }
 .fee-time-chart .cross { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
 .fee-time-tip { position: absolute; top: 30px; background: var(--bg); border: 1px solid var(--ink); padding: 4px 8px; font-size: 12px; white-space: nowrap; pointer-events: none; }
 
-/* Fee summary lines, editable in place. */
-.fee-sum { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 4px; }
-.fee-sum-line { display: flex; align-items: center; gap: 6px; }
-#fee-page .fee-sum-in { flex: 1; width: auto; }
+/* Fee summary lines: plain bulleted text that's edited in place (no boxes); wraps, never cut off. */
+.fee-draft ul.fee-sum { list-style: disc; padding-left: 18px; margin: 0 0 8px; }
+.fee-draft h2 .edit-link { margin-left: 8px; font-weight: 400; font-size: 13px; }
+.fee-draft .actions { margin-top: 12px; }
+.fee-sum-line { position: relative; padding-right: 22px; }
+#fee-page textarea.fee-sum-in {
+  display: block; width: 100%; border: 0; padding: 1px 2px; margin: 0; background: transparent;
+  font: inherit; font-size: 14px; line-height: 1.45; color: var(--ink);
+  resize: none; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; field-sizing: content; min-height: 0;
+}
+#fee-page textarea.fee-sum-in:hover { background: var(--soft); }
+#fee-page textarea.fee-sum-in:focus { outline: none; background: var(--soft); box-shadow: inset 0 -1px 0 var(--ink); }
+.fee-sum-line [data-del-sum] { position: absolute; right: 0; top: 1px; opacity: 0; text-decoration: none; }
+.fee-sum-line:hover [data-del-sum], .fee-sum-line:focus-within [data-del-sum], .fee-sum-line [data-del-sum]:focus { opacity: 1; }
+@media (hover: none) { .fee-sum-line [data-del-sum] { opacity: 1; } }
 
 /* Fee phases: move up / down. */
 .fee-move { display: inline-flex; gap: 2px; }
@@ -758,3 +769,12 @@ dialog.modal.pdf-page { max-width: 960px; padding: 16px 20px 20px; }
 .schedule-snap .snap-month { font-size: 10px; fill: var(--muted); }
 .schedule-snap .snap-grid { stroke: var(--rule); stroke-width: 1; }
 .schedule-snap .snap-today { stroke: #e8000b; stroke-width: 1; stroke-dasharray: 3 2; }
+
+/* Consultant pills by status: candidate (dashed), asked (outlined), teaming (filled). */
+.reach-candidate { border-style: dashed; color: var(--muted); }
+.reach-candidate .contact-name { color: var(--muted); }
+.reach-teaming { background: var(--ink); color: var(--bg); }
+.reach-teaming .contact-name, .reach-teaming .reach-x, .reach-teaming .reach-status { color: var(--bg); }
+.reach-status { border: 0; background: transparent; font: inherit; font-size: 11px; color: inherit; padding: 0 0 0 4px; margin-left: 4px; border-left: 1px solid currentColor; cursor: pointer; }
+.reach-teaming .reach-status option { color: var(--ink); background: var(--bg); }
+@media print { .reach-status { appearance: none; } }

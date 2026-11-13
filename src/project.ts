@@ -1,4 +1,4 @@
-import { DISCIPLINES, toDisciplines } from "../lib/disciplines";
+import { DISCIPLINES, firmDisciplines, toDisciplines } from "../lib/disciplines";
 import { askProjectName, confirmModal, confirmTyped, formModal, noticeModal } from "./modal";
 import { makeFee, proposalHtml, withWaiting } from "./fee";
 import { scheduleSnapshotHtml } from "./schedule-snapshot";
@@ -7,7 +7,7 @@ import { post } from "./api";
 import { estimateScheduleDraft, usdRange, type Usage } from "../lib/cost";
 import type { ScheduleDraft } from "../lib/claude";
 import { proposalTable } from "./fee-calc";
-import { deleteProject, listFees, saveFee, type SavedFee, projectLabel, listComparisons, listProjects, listSchedules, savesShared, listRfps, saveComparison, saveProject, saveRfp, saveSchedule, listConsultants, type SavedConsultant, type SavedComparison, type SavedProject, type SavedRfp, type SavedSchedule } from "./store";
+import { CONSULTANT_STATUS, type ConsultantStatus, deleteProject, listFees, saveFee, type SavedFee, projectLabel, listComparisons, listProjects, listSchedules, savesShared, listRfps, saveComparison, saveProject, saveRfp, saveSchedule, listConsultants, type SavedConsultant, type SavedComparison, type SavedProject, type SavedRfp, type SavedSchedule } from "./store";
 import { addAddendum, formatWhen, parseDay, projectDisciplines, proposalDue } from "./rfp";
 import { copyShareLink } from "./share";
 import { esc, firmName } from "./table";
@@ -365,7 +365,13 @@ function consultantsHtml(p: SavedProject): string {
         // Firms the team is reaching out to (added here), as removable pills; one whose proposal is in shows as the proposal.
         ...r.added
           .filter((c) => !r.fromProposals.has(firmName(c.name)))
-          .map((c) => `<span class="reach">${contactButton(c.name)}<button class="reach-x" data-remove-consultant="${c.i}" data-discipline="${esc(r.d)}" aria-label="Remove ${esc(c.name)}" title="Remove">×</button></span>`),
+          .map((c) => {
+            const status = c.statuses?.[r.d] ?? "asked";
+            const pick = `<select class="reach-status" data-consultant-status="${c.i}" data-discipline="${esc(r.d)}" aria-label="Where ${esc(c.name)} stands for ${esc(r.d)}" title="Candidate, asked, or teaming with us">${(Object.keys(CONSULTANT_STATUS) as ConsultantStatus[])
+              .map((s) => `<option value="${s}" ${s === status ? "selected" : ""}>${CONSULTANT_STATUS[s]}</option>`)
+              .join("")}</select>`;
+            return `<span class="reach reach-${status}">${contactButton(c.name)}${pick}<button class="reach-x" data-remove-consultant="${c.i}" data-discipline="${esc(r.d)}" aria-label="Remove ${esc(c.name)}" title="Remove">×</button></span>`;
+          }),
       ];
       // Architecture (and interiors and FF&E) are the firm's own work, so they don't get consultants.
       const add = IN_HOUSE.includes(r.d) ? "" : `<button class="link reach-add" data-add-consultant="${esc(r.d)}" aria-label="Add a consultant for ${esc(r.d)}">+ Add</button>`;
@@ -399,7 +405,7 @@ async function addConsultant(discipline: string) {
   const p = project;
   const taken = new Set((p.consultants ?? []).filter((c) => c.disciplines.includes(discipline)).map((c) => c.name.toLowerCase()));
   const directory = (await listConsultants().catch(() => [] as SavedConsultant[]))
-    .filter((c) => toDisciplines(c.disciplines).includes(discipline as (typeof DISCIPLINES)[number]) && !taken.has(c.name.toLowerCase()))
+    .filter((c) => firmDisciplines(c).includes(discipline as (typeof DISCIPLINES)[number]) && !taken.has(c.name.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
   const names = directory.map((c) => c.name);
   const values = await formModal({
@@ -419,8 +425,10 @@ async function addConsultant(discipline: string) {
   const list = p.consultants ?? [];
   for (const name of add) {
     const same = list.find((c) => c.name.toLowerCase() === name.toLowerCase());
-    if (same) same.disciplines = [...new Set([...same.disciplines, discipline])];
-    else list.push({ name, disciplines: [discipline] });
+    if (same) {
+      same.disciplines = [...new Set([...same.disciplines, discipline])];
+      same.statuses = { ...same.statuses, [discipline]: "candidate" };
+    } else list.push({ name, disciplines: [discipline], statuses: { [discipline]: "candidate" } });
   }
   p.consultants = list;
   await saveProject(p).catch((err) => noticeModal("Not saved", (err as Error).message));
@@ -432,6 +440,7 @@ async function removeConsultant(i: number, discipline?: string) {
   const c = project?.consultants?.[i];
   if (!project || !c) return;
   c.disciplines = discipline ? c.disciplines.filter((d) => d !== discipline) : [];
+  if (discipline && c.statuses) delete c.statuses[discipline];
   if (!c.disciplines.length) project.consultants!.splice(i, 1);
   await saveProject(project).catch((err) => noticeModal("Not saved", (err as Error).message));
   render();
@@ -574,6 +583,18 @@ document.addEventListener("click", (e) => {
 });
 addEventListener("keydown", (e) => e.key === "Escape" && closeContactCard());
 addEventListener("hashchange", closeContactCard);
+
+// A firm's status for one discipline: candidate, asked, or teaming (an MEP firm can be teaming for one and asked for another).
+document.addEventListener("change", async (e) => {
+  const el = e.target as HTMLSelectElement;
+  if (!el.matches?.("#project-page [data-consultant-status]") || !project) return;
+  const c = project.consultants?.[Number(el.dataset.consultantStatus)];
+  const d = el.dataset.discipline ?? "";
+  if (!c || !c.disciplines.includes(d) || !(el.value in CONSULTANT_STATUS)) return;
+  c.statuses = { ...c.statuses, [d]: el.value as ConsultantStatus };
+  await saveProject(project).catch((err) => noticeModal("Not saved", (err as Error).message));
+  render();
+});
 
 // ---------- Addenda ----------
 // Picking an addendum's PDF reads it into the project's RFP review, which then lists what changed.

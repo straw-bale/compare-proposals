@@ -41,6 +41,21 @@ const MATCHERS: [Discipline, RegExp][] = [
   ["Cost Estimating", /cost estimat|\bestimat|cost consult|quantity survey/i],
 ];
 
+/**
+ * The governing disciplines a directory firm covers: its disciplines, plus any specialty that names one ("Food
+ * service", "Foodservice design"). Food service also takes its usual wordings (kitchen consultant, culinary, servery)
+ * because every food-service firm was filed as a specialty before it joined the list. Other specialties stay
+ * specialties, so "Lighting design" isn't counted as Electrical.
+ */
+export function firmDisciplines(c: { disciplines?: string[]; specialties?: string[] }): Discipline[] {
+  const flat = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+  const named = (c.specialties ?? []).filter((s) => {
+    const mapped = toDisciplines([s]);
+    return mapped.some((d) => flat(s).includes(flat(d))) || (mapped.length === 1 && mapped[0] === "Food Service");
+  });
+  return toDisciplines([...(c.disciplines ?? []), ...named]);
+}
+
 /** Maps free-text disciplines ("MEP", "HVAC design", "Lab planning") onto the governing list, in list order. */
 export function toDisciplines(texts: string[]): Discipline[] {
   const hits = new Set<Discipline>();

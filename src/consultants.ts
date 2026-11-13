@@ -1,4 +1,4 @@
-import { DISCIPLINES, toDisciplines } from "../lib/disciplines";
+import { DISCIPLINES, firmDisciplines, toDisciplines } from "../lib/disciplines";
 import { confirmDelete, formModal, noticeModal } from "./modal";
 import { deleteConsultant, listComparisons, listConsultants, saveConsultant, savesShared, type SavedConsultant } from "./store";
 import { contactText, parseContacts, type Contact } from "./contacts";
@@ -78,8 +78,9 @@ async function load() {
     Object.assign(f, {
       name: s.name,
       saved: s,
-      disciplines: toDisciplines([...s.disciplines, ...f.disciplines]),
-      specialties: s.specialties ?? [],
+      // A specialty that names a governing discipline (e.g. "Food service") is listed under that discipline instead.
+      disciplines: toDisciplines([...firmDisciplines(s), ...f.disciplines]),
+      specialties: (s.specialties ?? []).filter((x) => !firmDisciplines({ specialties: [x] }).length),
       location: s.location,
       contacts: s.contacts ?? (s.contact ? parseContacts(s.contact) : f.contacts),
       website: s.website,

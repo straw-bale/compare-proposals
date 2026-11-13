@@ -86,6 +86,9 @@ export type SavedConsultant = {
 };
 
 /** A project ties an RFP review and its comparisons together (they store its id as projectId). */
+export type ConsultantStatus = "candidate" | "asked" | "teaming";
+export const CONSULTANT_STATUS: Record<ConsultantStatus, string> = { candidate: "Candidate", asked: "Asked", teaming: "Teaming" };
+
 export type SavedProject = {
   id: string;
   savedAt: number;
@@ -94,7 +97,12 @@ export type SavedProject = {
   number?: string;
   rfpId?: string;
   /** Consultants added to the project by hand (firms whose proposals are linked are shown from the proposals). */
-  consultants?: { name: string; disciplines: string[] }[];
+  /**
+   * Firms for the project's disciplines and where each stands for each discipline (statuses, by discipline): a
+   * candidate we're considering, asked (we've reached out), or teaming (willing to propose with us). A discipline with
+   * no status counts as asked (entries saved before statuses existed).
+   */
+  consultants?: { name: string; disciplines: string[]; statuses?: Record<string, ConsultantStatus> }[];
   /** Disciplines the RFP review requests that this project doesn't need a consultant for. */
   disciplinesRemoved?: string[];
   /** The last check of its proposals against the RFP. firms[i] names firm_index i; comparisonIds are what was checked. */
