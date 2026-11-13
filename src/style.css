@@ -779,3 +779,7 @@ dialog.modal.pdf-page { max-width: 960px; padding: 16px 20px 20px; }
 .reach-status { border: 0; background: transparent; font: inherit; font-size: 11px; color: inherit; padding: 0 0 0 4px; margin-left: 4px; border-left: 1px solid currentColor; cursor: pointer; }
 .reach-teaming .reach-status option { color: var(--ink); background: var(--bg); }
 @media print { .reach-status { appearance: none; } }
+
+/* The fee table on the project page links to the fee. */
+a.fee-on-project { display: block; color: inherit; text-decoration: none; cursor: pointer; padding: 3px; margin-left: -3px; }
+a.fee-on-project:hover table, a.fee-on-project:focus-visible table { outline: 2px solid var(--ink); outline-offset: 1px; }

@@ -126,7 +126,8 @@ export function proposalTable(f: SavedFee): ProposalTable {
       const amounts = [architecture, ...quoted];
       return { label: p.name, amounts, total: amounts.reduce((s, x) => s + x, 0) };
     })
-    .filter((r) => r.total > 0);
+    // Every phase on the fee, in order (one without an amount yet shows "-"), so a phase added or moved shows here too.
+    .filter((r) => r.label.trim());
   const expenses = num(f.expenses);
   if (expenses) rows.push({ label: "Reimbursable Expenses", amounts: [expenses, ...consultants.map(() => 0)], total: expenses });
   const totals = [0, ...consultants.map(() => 0)].map((_, i) => rows.reduce((s, r) => s + r.amounts[i], 0));

@@ -675,7 +675,7 @@ const PT = {
 const ptMoney = (n: number) => (Math.round(n * 100) ? `$ ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-");
 
 export function proposalHtml(t: ProposalTable): string {
-  if (!t.rows.length) return `<p class="none">Add hours, rates or consultant fees to fill in the table.</p>`;
+  if (!t.total) return `<p class="none">Add hours, rates or consultant fees to fill in the table.</p>`;
   const th = (style: string, html: string) => `<th style="${PT.border} ${style}">${html}</th>`;
   const td = (style: string, html: string) => `<td style="${PT.border} ${style}">${html}</td>`;
   const head = t.columns

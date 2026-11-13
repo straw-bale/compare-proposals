@@ -164,7 +164,10 @@ function render() {
       ${(() => {
         // The fee as it goes in the proposal, once it has amounts.
         const table = fees[0] && proposalTable(fees[0]);
-        return table?.rows.length ? `<div class="scroll fee-on-project">${proposalHtml(table)}</div>` : "";
+        // The whole table opens the fee on the Fee tab, like the schedule snapshot opens the schedule.
+        return table?.total
+          ? `<a class="scroll fee-on-project" href="#fee/${encodeURIComponent(fees[0].id)}" aria-label="Open the fee" title="Open the fee">${proposalHtml(table)}</a>`
+          : "";
       })()}
       ${fees.length ? "" : `<div class="actions"><button class="btn" data-make-fee>Make fee</button></div>`}
     </div>`;
