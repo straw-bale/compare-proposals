@@ -11,6 +11,7 @@ export const DISCIPLINES = [
   "Landscape",
   "Structural",
   "Laboratory Design",
+  "Food Service",
   "Fire Protection",
   "Plumbing",
   "Mechanical",
@@ -31,6 +32,8 @@ const MATCHERS: [Discipline, RegExp][] = [
   ["Landscape", /landscape/i],
   ["Structural", /structur|\bstruct\b/i],
   ["Laboratory Design", /\blab(oratory)?s?\b.*(plan|design|consult)|(plan|design).*\blab(oratory)?s?\b|^lab(oratory)?s?$/i],
+  // Food service consulting: commercial kitchens and servery design, not a break-room kitchenette.
+  ["Food Service", /food[\s-]?service|foodservice|commercial kitchen|kitchen (equipment|design|consult)|culinary|servery|cafeteria|dining (hall|services)/i],
   ["Fire Protection", /fire[\s-]?(protection|suppression|alarm)|sprinkler|\bmepfp\b/i],
   ["Plumbing", /plumbing|\bmep\b|\bmepf?p?\b|domestic water|sanitary/i],
   ["Mechanical", /mechanical|\bmep\b|\bmepf?p?\b|hvac|\bm\/e\/p\b/i],

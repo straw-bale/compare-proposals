@@ -3,7 +3,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { costOf, type Usage } from "./cost.js";
 import { DISCIPLINES, toDisciplines } from "./disciplines.js";
-import { ADDENDUM_SYSTEM, CHAT_SYSTEM, CHECK_SYSTEM, COMPARE_SYSTEM, EXTRACT_SYSTEM, FEE_DRAFT_SYSTEM, FIT_CHECK_SYSTEM, OWN_PROPOSAL_SYSTEM, RFP_SYSTEM, SCHEDULE_DRAFT_SYSTEM, SUGGEST_SYSTEM } from "./prompts.js";
+import { ADDENDUM_SYSTEM, CHAT_SYSTEM, CHECK_SYSTEM, COMPARE_SYSTEM, EXTRACT_SYSTEM, FEE_CHAT_SYSTEM, FEE_DRAFT_SYSTEM, FIT_CHECK_SYSTEM, OWN_PROPOSAL_SYSTEM, RFP_SYSTEM, SCHEDULE_DRAFT_SYSTEM, SUGGEST_SYSTEM } from "./prompts.js";
 
 export const MODEL = "claude-opus-5-5";
 
@@ -630,6 +630,46 @@ export async function draftFee(
   checkStop(msg);
   if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's fee draft.", 502);
   return { draft: msg.parsed_output, usage: usageOf(msg) };
+}
+
+// The fee worksheet's assistant: answers questions and edits tasks and hours. The edits come back as a short list of
+// operations (see FEE_CHAT_SYSTEM) that the browser checks and applies, so it can't touch anything else.
+export const FeeChatSchema = z.object({
+  reply: z.string(),
+  changes: z.array(
+    z.object({
+      op: z.enum(["add_task", "update_task", "delete_task", "scale_hours", "set_value"]),
+      phase_id: z.string(),
+      task_id: z.string(),
+      name: z.string(),
+      number: z.number(),
+      hours: z.array(z.object({ role_id: z.string(), hours: z.number() })),
+    }),
+  ),
+});
+export type FeeChat = z.infer<typeof FeeChatSchema>;
+
+/** One turn with the fee assistant. Earlier turns are plain text; the worksheet as it is now rides on the last one. */
+export async function askFeeAssistant(
+  worksheet: unknown,
+  rfp: unknown,
+  turns: { role: "user" | "assistant"; content: string }[],
+  context = "",
+): Promise<{ answer: FeeChat; usage: Usage }> {
+  const last = turns[turns.length - 1];
+  const state = `${rfp ? `RFP review (JSON):\n${JSON.stringify(rfp)}\n\n` : ""}Current fee worksheet (JSON):\n${JSON.stringify(worksheet)}`;
+  const stream = getClient().beta.messages.stream({
+    ...BASE,
+    system: withContext(FEE_CHAT_SYSTEM, context),
+    // The instructions and earlier turns repeat each message, so they're cached.
+    cache_control: { type: "ephemeral" },
+    output_config: { effort: "medium", format: betaZodOutputFormat(FeeChatSchema) },
+    messages: [...turns.slice(0, -1), { role: "user" as const, content: `${state}\n\n${last.content}` }],
+  });
+  const msg = await stream.finalMessage();
+  checkStop(msg);
+  if (!msg.parsed_output) throw new UserFacingError("Couldn't parse Claude's answer.", 502);
+  return { answer: msg.parsed_output, usage: usageOf(msg) };
 }
 
 export type ChatTurn ={ role: "user" | "assistant"; content: string };

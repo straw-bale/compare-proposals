@@ -19,6 +19,7 @@ import { getCurrentRfp, initRfp, openRfp, showRfpStart } from "./rfp";
 import { showCalls } from "./calls";
 import { showConsultants } from "./consultants";
 import { flushFee, showFee } from "./fee";
+import { closeFeeChat } from "./fee-chat";
 import { showWorldView } from "./worldview";
 import { typeSplash } from "./splash";
 import { clearPendingProject, initProject, openProject, pendingProject, showProjectList } from "./project";
@@ -711,6 +712,7 @@ function showTab() {
     document.querySelectorAll("nav.tabs a, a.worldview-link").forEach((a) => a.classList.toggle("on", a.getAttribute("data-tab") === "schedule"));
     setChatOpen(false);
     flushFee();
+    closeFeeChat();
     import("./schedule/mount").then((m) => {
       schedule = m;
       if (onSchedule()) m.showSchedule(location.hash);
@@ -737,7 +739,10 @@ function showTab() {
   if (tab === "worldview" && started) showWorldView();
   if (tab === "home") typeSplash();
   if (tab === "fee" && started) showFee(id);
-  else flushFee();
+  else {
+    flushFee();
+    closeFeeChat();
+  }
 }
 
 /** On the intake, names the project the next comparison will be linked to (when started from a project page). */

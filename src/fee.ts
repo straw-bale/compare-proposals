@@ -9,6 +9,7 @@ import { feeCurveAt, type FeePoint } from "../lib/worldview";
 import { contextForRfp } from "./worldview";
 import type { FeeDraft } from "../lib/claude";
 import { usd, type Usage } from "../lib/cost";
+import { applyFeeChanges, closeFeeChat, openFeeChat } from "./fee-chat";
 
 // Fee builder: labor by phase (hours per role × the role's rate), consultants with a management markup, and a
 // construction budget to check the total against as a percentage. One fee per project; also usable on its own.
@@ -137,9 +138,31 @@ export async function showFee(id: string | null) {
     addEventListener("pagehide", () => flushFee(true));
   }
   if (fee && fee.id !== id) flushFee();
+  if (!id || fee?.id !== id) closeFeeChat();
   if (id) return openFee(id);
   fee = null;
   return showList();
+}
+
+/** The AI assistant for the open fee (see fee-chat.ts): its edits are one step, undone with one Undo, and saved. */
+function openAssistant() {
+  openFeeChat({
+    fee: () => fee,
+    rfp: async () => {
+      const project = projects.find((p) => p.id === fee?.workspaceProjectId);
+      if (!project) return null;
+      const rfps = await listRfps();
+      return (rfps.find((r) => r.id === project.rfpId) ?? rfps.find((r) => r.projectId === project.id))?.rfp ?? null;
+    },
+    apply: (changes) => {
+      if (!fee) return { applied: 0, skipped: changes.length };
+      checkpoint(); // anything typed before asking is its own step
+      const result = applyFeeChanges(fee, changes);
+      result.phases.forEach((id) => openPhases.add(id)); // show what changed
+      if (result.applied) rerender();
+      return result;
+    },
+  });
 }
 
 /** Saves the open fee now (when leaving it, or with keepalive when the page is closing). */
@@ -365,7 +388,7 @@ function render() {
     <div class="rfp-top">
       <a class="link" href="#fee">← All fees</a>
       <span class="status error" id="fee-save-error"></span>
-      <div class="actions"><button class="btn" data-undo title="Undo (Ctrl+Z)" ${undoStack.length ? "" : "disabled"}>Undo</button><button class="btn" data-delete-fee>Delete</button></div>
+      <div class="actions"><button class="btn" data-fee-chat>Ask AI</button><button class="btn" data-undo title="Undo (Ctrl+Z)" ${undoStack.length ? "" : "disabled"}>Undo</button><button class="btn" data-delete-fee>Delete</button></div>
     </div>
     ${input('data-k="title" aria-label="Fee title"', f.title, "fee-title")}
     <p class="fee-project">${
@@ -768,6 +791,7 @@ async function onClick(e: Event) {
   if (t.closest("[data-undo]")) return undo();
   if (!fee) return;
   const f = fee;
+  if (t.closest("[data-fee-chat]")) return openAssistant();
   let id: string | null;
   if (t.closest("[data-link-fee]")) return linkToProject(f);
   if (t.closest("[data-unlink-fee]")) {
