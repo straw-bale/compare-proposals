@@ -1,5 +1,5 @@
 <script>
-  import { parseDate, toISO, timeColumns, ZOOM_COL_W, totalDays, dateToPx, dateToPxMonth, pxToDateMonth, dateToPxPeriod, pxToDatePeriod, isLightColor, MONTHS_SHORT, toWeekday } from '../utils/dates.js';
+  import { parseDate, toISO, timeColumns, ZOOM_COL_W, totalDays, dateToPx, dateToPxMonth, pxToDateMonth, dateToPxPeriod, pxToDatePeriod, dateToPxQuarter, pxToDateQuarter, isLightColor, MONTHS_SHORT, toWeekday } from '../utils/dates.js';
   import { pointerDrag } from '../utils/pointer.js';
 
   const ROW_H = 26;
@@ -60,7 +60,7 @@
 
   // Month span groups for biweek/weekly header
   let mGroups = $derived.by(() => {
-    if (zoom === 'month') return [];
+    if (zoom === 'month' || zoom === 'quarter') return [];
     const groups = [];
     let cur = null;
     for (const col of columns) {
@@ -77,6 +77,7 @@
 
   let todayPx   = $derived(
     zoom === 'month'  ? dateToPxMonth(tmStr, viewStart, colW) :
+    zoom === 'quarter' ? dateToPxQuarter(tmStr, viewStart, colW) :
     zoom === 'biweek' ? dateToPxPeriod(tmStr, viewStart, colW, 14) :
     zoom === 'week'   ? dateToPxPeriod(tmStr, viewStart, colW, 7) :
     dateToPx(tmStr, viewStart, viewEnd, ganttWidth));
@@ -112,6 +113,7 @@
 
   function px(dateStr) {
     if (zoom === 'month')  return dateToPxMonth(dateStr, viewStart, colW);
+    if (zoom === 'quarter') return dateToPxQuarter(dateStr, viewStart, colW);
     if (zoom === 'biweek') return dateToPxPeriod(dateStr, viewStart, colW, 14);
     if (zoom === 'week')   return dateToPxPeriod(dateStr, viewStart, colW, 7);
     return dateToPx(dateStr, viewStart, viewEnd, ganttWidth);
@@ -119,6 +121,7 @@
 
   function pxToDate(xPx) {
     if (zoom === 'month')  return pxToDateMonth(xPx, viewStart, colW);
+    if (zoom === 'quarter') return pxToDateQuarter(xPx, viewStart, colW);
     if (zoom === 'biweek') return pxToDatePeriod(xPx, viewStart, colW, 14);
     if (zoom === 'week')   return pxToDatePeriod(xPx, viewStart, colW, 7);
     const totalMs = viewEnd.getTime() - viewStart.getTime();
@@ -286,11 +289,11 @@
         {/each}
       </div>
 
-      {#if zoom === 'month'}
-        <!-- Month row (monthly zoom) -->
+      {#if zoom === 'month' || zoom === 'quarter'}
+        <!-- Month row (monthly zoom), or quarters (Q1–Q4) for compact prints -->
         <div class="month-row">
           {#each columns as col}
-            <div class="month-cell" style:width="{colW}px">{MONTHS_SHORT[col.getMonth()]}</div>
+            <div class="month-cell" class:quarter-cell={zoom === 'quarter'} style:width="{colW}px">{zoom === 'quarter' ? `Q${Math.floor(col.getMonth() / 3) + 1}` : MONTHS_SHORT[col.getMonth()]}</div>
           {/each}
         </div>
       {:else}
@@ -387,6 +390,19 @@
           <div class="col-band" class:even={i % 2 === 0} style:width="{colW}px" style:height="{totalH}px"></div>
         {/each}
       </div>
+
+      <!-- Quarter zoom: solid lines where each month and quarter begins -->
+      {#if zoom === 'quarter'}
+        {#each columns as col, i}
+          {#each [0, 1, 2] as m}
+            {@const at = new Date(col.getFullYear(), col.getMonth() + m, 1)}
+            {@const lx = px(toISO(at))}
+            {#if (i > 0 || m > 0) && lx > 0 && lx < ganttWidth}
+              <div class="month-line" class:quarter-line={m === 0} style:left="{lx}px" style:height="{totalH}px"></div>
+            {/if}
+          {/each}
+        {/each}
+      {/if}
 
       <!-- Today line -->
       {#if showToday}
@@ -664,6 +680,9 @@
   .gantt-body { position: relative; }
   .col-bands { position: absolute; top: 0; left: 0; display: flex; pointer-events: none; z-index: 0; }
   .col-band { flex-shrink: 0; }
+  .month-line { position: absolute; top: 0; width: 0; border-left: 1px solid rgba(0,0,0,.18); pointer-events: none; z-index: 1; }
+  .month-line.quarter-line { border-left-color: var(--black); }
+  .month-cell.quarter-cell { border-right-style: solid; }
   .col-band.even { background: rgba(0,0,0,.022); }
 
   /* Lines */

@@ -633,6 +633,7 @@ const gateInput = $<HTMLInputElement>("gate-input");
 const gateError = $<HTMLSpanElement>("gate-error");
 
 function showGate() {
+  document.documentElement.classList.remove("gate-checking");
   gate.hidden = false;
   gateInput.focus();
 }
@@ -666,7 +667,10 @@ codeAccepted(accessCode()).then(
     gate.hidden = true;
     start();
   },
-  () => (gateError.textContent = "Can't reach the server. Refresh to try again."),
+  () => {
+    showGate();
+    gateError.textContent = "Can't reach the server. Refresh to try again.";
+  },
 );
 
 // Default PDF name: the open RFP review or comparison on the visible tab.

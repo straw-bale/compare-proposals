@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Proposal Workspace</title>
+    <!-- With a saved access code, the gate stays blank while the code is checked, so the form doesn't flash on every load. -->
+    <script>
+      try {
+        if (localStorage.getItem("access-code")) document.documentElement.classList.add("gate-checking");
+      } catch {}
+    </script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>

@@ -3,7 +3,7 @@
   import TaskPanel    from '../lib/components/TaskPanel.svelte';
   import GanttPanel   from '../lib/components/GanttPanel.svelte';
   import LegendFooter from '../lib/components/LegendFooter.svelte';
-  import { parseDate, toISO, monthList } from '../lib/utils/dates.js';
+  import { parseDate, toISO, timeColumns } from '../lib/utils/dates.js';
 
   let { data } = $props();
   let markerLanes = $state(1); // stacked marker lanes reported by GanttPanel
@@ -20,8 +20,10 @@
   let showToday  = $state(data.autoprint || data.pdf ? data.showToday  : true);
   let showLegend = $state(data.autoprint || data.pdf ? data.showLegend : true);
 
+  // 8.5 × 11 portrait is narrow, so it shows quarters (Q1–Q4) instead of months; 11 × 17 keeps months.
+  let printZoom = $derived(data.paper === 'tabloid' ? 'month' : 'quarter');
   let ganttMonths = $derived(project
-    ? monthList(parseDate(project.viewStart), parseDate(project.viewEnd))
+    ? timeColumns(parseDate(project.viewStart), parseDate(project.viewEnd), printZoom)
     : []);
 
   // Always one page: when the schedule (with its legend) is taller than the printable area, everything is scaled
@@ -112,6 +114,7 @@
     <div class="preview-body">
       <div class="preview-inner" style:width="{contentW}px" style:min-width="{contentW}px">
         <TaskPanel
+          readonly
           markerLanes={markerLanes}
           tasks={project.tasks}
           onRename={noop}
@@ -133,7 +136,7 @@
           onTaskUpdate={noop}
           onLegendItemUpdate={noop}
           onDraggingChange={noop}
-          zoom="month"
+          zoom={printZoom}
           colWOverride={colW}
           showTodayLine={showToday}
         />
@@ -171,7 +174,8 @@
   }
 
   .preview-hdr {
-    padding: 10px 18px 8px;
+    /* Flush left with the schedule's edge (the task list starts there). */
+    padding: 10px 18px 8px 0;
     border-bottom: 2px solid var(--black);
     background: #fff;
     flex-shrink: 0;

@@ -83,6 +83,35 @@ export function pxToDatePeriod(xPx, viewStart, colW, periodDays) {
   return toISO(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
 }
 
+/** The first day of the calendar quarter a date falls in. */
+export function quarterStart(d) {
+  return new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1);
+}
+
+/**
+ * Quarter zoom (used for compact prints): each column is one calendar quarter, colW px wide whatever its day count.
+ * viewStart is any date; columns start at its quarter.
+ */
+export function dateToPxQuarter(dateStr, viewStart, colW) {
+  const d = parseDate(dateStr);
+  if (!d) return 0;
+  const s = quarterStart(viewStart);
+  const q = Math.floor(((d.getFullYear() - s.getFullYear()) * 12 + (d.getMonth() - s.getMonth())) / 3);
+  const qs = new Date(s.getFullYear(), s.getMonth() + q * 3, 1);
+  const qe = new Date(s.getFullYear(), s.getMonth() + q * 3 + 3, 1);
+  return (q + (d - qs) / (qe - qs)) * colW;
+}
+
+/** Inverse of dateToPxQuarter */
+export function pxToDateQuarter(xPx, viewStart, colW) {
+  const s = quarterStart(viewStart);
+  const q = Math.floor(xPx / colW);
+  const qs = new Date(s.getFullYear(), s.getMonth() + q * 3, 1);
+  const qe = new Date(s.getFullYear(), s.getMonth() + q * 3 + 3, 1);
+  const d = new Date(qs.getTime() + (xPx / colW - q) * (qe - qs));
+  return toISO(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+}
+
 /** Move a weekend date to the nearest weekday (Sat → Fri, Sun → Mon). Returns ISO. */
 export function toWeekday(iso) {
   if (!iso) return iso;
@@ -131,6 +160,9 @@ export function timeColumns(viewStart, viewEnd, zoom) {
     while (d < viewEnd) { cols.push(new Date(d)); d.setDate(d.getDate() + 14); }
   } else if (zoom === 'week') {
     while (d < viewEnd) { cols.push(new Date(d)); d.setDate(d.getDate() + 7); }
+  } else if (zoom === 'quarter') {
+    const cur = quarterStart(viewStart);
+    while (cur <= viewEnd) { cols.push(new Date(cur)); cur.setMonth(cur.getMonth() + 3); }
   } else {
     const end = new Date(viewEnd.getFullYear(), viewEnd.getMonth(), 1);
     const cur = new Date(viewStart.getFullYear(), viewStart.getMonth(), 1);

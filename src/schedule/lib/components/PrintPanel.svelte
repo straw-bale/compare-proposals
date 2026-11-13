@@ -140,8 +140,9 @@
           <div class="section">
             <div class="section-label">Schedule</div>
             <div class="info-row">
-              <span class="info-key">Months</span>
-              <span class="info-val">{monthCount}</span>
+              <!-- 8.5 × 11 prints quarters (Q1–Q4); 11 × 17 prints months -->
+              <span class="info-key">{paper === 'letter' ? 'Quarters' : 'Months'}</span>
+              <span class="info-val">{paper === 'letter' ? Math.ceil(monthCount / 3) : monthCount}</span>
             </div>
             <div class="info-row">
               <span class="info-key">Scale</span>
