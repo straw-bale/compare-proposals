@@ -1,37 +1,76 @@
-// The fee over time: the labor hours spread across the project's duration as weekly billable hours, starting and
-// ending slower (spin-up and closeout), with what that averages out to per week and per month.
+// The fee over time: each phase's labor hours spread over its own stretch of the project, in order, as weekly
+// billable hours. Each phase's stretch is a typical share of the project's duration, so the shape follows the
+// months entered: a light start in programming, the documents peak, a long lighter construction phase.
 import { totals } from "./fee-calc";
+import { shortPhase } from "./fee-templates";
 import type { SavedFee } from "./store";
 import { esc } from "./table";
 
 const WEEKS_PER_MONTH = 52 / 12;
-/** Pace at the very start and end, as a share of full pace. */
-const RAMP_FROM = 0.2;
-/** Share of the project spent ramping up (and again ramping down), within a sensible range of weeks. */
-const RAMP_SHARE = 0.12;
 const FULL_TIME = 40;
+
+/**
+ * Typical share of a project's calendar time for each phase, by name. Construction administration runs as long as
+ * construction, so it takes the largest share; documents phases are short and dense. Shares are rescaled to the
+ * phases the fee actually has.
+ */
+const TIME_SHARE: [RegExp, number][] = [
+  [/program|pre-?design|feasib/i, 6],
+  [/schematic|\bsd\b/i, 10],
+  [/design dev|\bdd\b/i, 12],
+  [/construction doc|\bcd\b|documents/i, 16],
+  [/bid|procure|negotiat|permit/i, 6],
+  [/construction|\bca\b/i, 45],
+  [/close/i, 5],
+];
+const OTHER_SHARE = 8;
+const timeShare = (name: string) => TIME_SHARE.find(([re]) => re.test(name))?.[1] ?? OTHER_SHARE;
 
 export const weeksIn = (months: number) => Math.max(1, Math.round(months * WEEKS_PER_MONTH));
 
-/** Weekly hours that add up to `total`: ramping up from RAMP_FROM of full pace, steady, then ramping down. */
-export function weeklyHours(total: number, weeks: number): number[] {
-  const ramp = Math.min(Math.floor(weeks / 2), Math.max(1, Math.round(weeks * RAMP_SHARE)));
-  const pace = Array.from({ length: weeks }, (_, i) => {
-    const edge = Math.min(i + 0.5, weeks - i - 0.5); // weeks from the nearer end
-    return edge >= ramp ? 1 : RAMP_FROM + (1 - RAMP_FROM) * (edge / ramp);
+export type PhaseSpan = { name: string; hours: number; start: number; end: number };
+
+/** Each phase's stretch of the project, in weeks (fractional), in order, with its hours. */
+export function phaseSpans(f: SavedFee, weeks: number): PhaseSpan[] {
+  const t = totals(f);
+  const shares = f.phases.map((p) => timeShare(p.name));
+  const sum = shares.reduce((a, b) => a + b, 0) || 1;
+  let at = 0;
+  return f.phases.map((p, i) => {
+    const len = (shares[i] / sum) * weeks;
+    const span = { name: p.name, hours: t.phases[i].hours, start: at, end: at + len };
+    at += len;
+    return span;
   });
-  const sum = pace.reduce((a, b) => a + b, 0);
-  return pace.map((p) => (total * p) / sum);
+}
+
+/** Weekly hours: each phase's hours spread evenly over its stretch (a week shared by two phases gets part of each). */
+export function weeklyHours(spans: PhaseSpan[], weeks: number): number[] {
+  const out = new Array<number>(weeks).fill(0);
+  for (const s of spans) {
+    const len = s.end - s.start;
+    if (len <= 0 || !s.hours) continue;
+    const perWeek = s.hours / len;
+    for (let w = Math.floor(s.start); w < Math.min(weeks, Math.ceil(s.end)); w++) {
+      const overlap = Math.min(w + 1, s.end) - Math.max(w, s.start);
+      if (overlap > 0) out[w] += perWeek * overlap;
+    }
+  }
+  return out;
 }
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const hrs = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
-const people = (h: number) => (h / FULL_TIME).toLocaleString("en-US", { maximumFractionDigits: 1 });
+const people = (h: number) => {
+  const n = Math.round((h / FULL_TIME) * 10) / 10;
+  return `${n.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${n === 1 ? "person" : "people"}`;
+};
+const months1 = (weeks: number) => (weeks / WEEKS_PER_MONTH).toLocaleString("en-US", { maximumFractionDigits: 1 });
 
 // Chart geometry (SVG units; the chart scales to its box).
 const W = 760;
-const H = 260;
-const PAD = { l: 48, r: 12, t: 12, b: 40 };
+const H = 280;
+const PAD = { l: 48, r: 12, t: 30, b: 40 };
 
 /** The numbers and the chart, or a prompt for the duration. Re-run whenever the fee's figures change. */
 export function feeTimeHtml(f: SavedFee): string {
@@ -40,40 +79,55 @@ export function feeTimeHtml(f: SavedFee): string {
   if (!months) return `<p class="none">Enter the project duration to see the weekly hours.</p>`;
   if (!t.laborHours) return `<p class="none">Add hours to the phases to see them over time.</p>`;
   const weeks = weeksIn(months);
-  const series = weeklyHours(t.laborHours, weeks);
+  const spans = phaseSpans(f, weeks);
+  const series = weeklyHours(spans, weeks);
   const peak = Math.max(...series);
+  const peakWeek = series.indexOf(peak);
+  const peakPhase = spans.find((s) => peakWeek + 0.5 >= s.start && peakWeek + 0.5 < s.end)?.name ?? "";
   const avg = t.laborHours / weeks;
   const rate = t.labor / t.laborHours; // blended $ per hour
   const rows: [string, string][] = [
-    ["Average per week", `${hrs(avg)} hours · about ${people(avg)} people full time`],
-    ["Peak per week", `${hrs(peak)} hours · about ${people(peak)} people full time`],
+    ["Average per week", `${hrs(avg)} hours · about ${people(avg)} full time`],
+    ["Peak per week", `${hrs(peak)} hours · about ${people(peak)} full time${peakPhase ? ` <span class="note">in ${esc(peakPhase)}</span>` : ""}`],
     ["Our labor per month", money(t.labor / months)],
     ["Total fee per month", `${money(t.total / months)} <span class="note">with consultants and expenses</span>`],
   ];
   return `
     <table class="grid facts fee-time-facts">${rows.map(([k, v]) => `<tr><th scope="row">${k}</th><td>${v}</td></tr>`).join("")}</table>
-    <div class="fee-time-chart" data-weeks="${weeks}" data-rate="${rate}">${chartSvg(series, months)}<div class="fee-time-tip" hidden></div></div>
-    <p class="note">Spread over ${weeks} weeks, starting and finishing at a slower pace for spin-up and closeout. A rough guide, not a staffing plan.</p>`;
+    <div class="fee-time-chart" data-weeks="${weeks}" data-rate="${rate}">${chartSvg(series, spans, months)}<div class="fee-time-tip" hidden></div></div>
+    <p class="note">Each phase's hours spread over its typical share of the ${esc(String(months))} months (${spans
+      .map((s) => `${esc(shortPhase(s.name))} ${months1(s.end - s.start)}`)
+      .join(", ")}). A rough guide, not a staffing plan.</p>`;
 }
 
-function chartSvg(series: number[], months: number): string {
+function chartSvg(series: number[], spans: PhaseSpan[], months: number): string {
   const weeks = series.length;
-  const top = niceMax(Math.max(...series));
-  const sx = (w: number) => PAD.l + (weeks <= 1 ? 0 : (w / (weeks - 1)) * (W - PAD.l - PAD.r));
+  const step = niceStep(Math.max(...series) / 4);
+  const top = Math.ceil((Math.max(...series) * 1.05) / step) * step;
+  // x is in weeks from the start (0 … weeks); each week's hours sit at its middle.
+  const sx = (w: number) => PAD.l + (w / weeks) * (W - PAD.l - PAD.r);
   const sy = (h: number) => H - PAD.b - (h / top) * (H - PAD.t - PAD.b);
-  const yStep = top / 4;
-  const yTicks = Array.from({ length: 5 }, (_, i) => i * yStep);
+  const yTicks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
   // Month marks: every month, or every 2, 3, 6 or 12 for longer projects.
   const every = [1, 2, 3, 6, 12].find((n) => months / n <= 12) ?? 12;
   const monthTicks = Array.from({ length: Math.floor(months / every) + 1 }, (_, i) => i * every).filter((m) => m <= months);
-  const path = series.map((h, i) => `${i ? "L" : "M"}${sx(i).toFixed(1)},${sy(h).toFixed(1)}`).join("");
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Billable hours per week across the project">
+  // A step per week, so each phase reads as its own level.
+  const path = series.map((h, i) => `${i ? "L" : "M"}${sx(i).toFixed(1)},${sy(h).toFixed(1)}L${sx(i + 1).toFixed(1)},${sy(h).toFixed(1)}`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Billable hours per week across the project, phase by phase">
+    ${spans
+      .map((s, i) => {
+        const x0 = sx(s.start);
+        const x1 = sx(s.end);
+        const label = x1 - x0 > 26 ? `<text class="phase" x="${(x0 + x1) / 2}" y="${PAD.t - 10}" text-anchor="middle">${esc(shortPhase(s.name))}</text>` : "";
+        return `${i ? `<line class="phase-line" x1="${x0}" x2="${x0}" y1="${PAD.t - 22}" y2="${sy(0)}"/>` : ""}${label}`;
+      })
+      .join("")}
     <line class="axis-line" x1="${PAD.l}" x2="${W - PAD.r}" y1="${sy(0)}" y2="${sy(0)}"/>
     <line class="axis-line" x1="${PAD.l}" x2="${PAD.l}" y1="${PAD.t}" y2="${sy(0)}"/>
     ${yTicks.map((v) => `<line class="tick-mark" x1="${PAD.l - 4}" x2="${PAD.l}" y1="${sy(v)}" y2="${sy(v)}"/><text class="tick" x="${PAD.l - 8}" y="${sy(v) + 4}" text-anchor="end">${hrs(v)}</text>`).join("")}
     ${monthTicks
       .map((m) => {
-        const x = sx(Math.min(weeks - 1, m * WEEKS_PER_MONTH));
+        const x = sx(m * WEEKS_PER_MONTH * (weeks / (months * WEEKS_PER_MONTH)));
         return `<line class="tick-mark" x1="${x}" x2="${x}" y1="${sy(0)}" y2="${sy(0) + 4}"/><text class="tick" x="${x}" y="${sy(0) + 18}" text-anchor="middle">${m}</text>`;
       })
       .join("")}
@@ -84,13 +138,13 @@ function chartSvg(series: number[], months: number): string {
   </svg>`;
 }
 
-/** A round top for the hours axis (e.g. 87 → 100, 130 → 150). */
-function niceMax(v: number): number {
+/** A round step for the hours axis (e.g. 33 → 50, 18 → 20), so its labels are round numbers. */
+function niceStep(v: number): number {
   const mag = Math.pow(10, Math.floor(Math.log10(Math.max(v, 1))));
-  return ([1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * mag).find((n) => n >= v * 1.05) ?? 10 * mag);
+  return [1, 2, 2.5, 5, 10].map((m) => m * mag).find((n) => n >= v) ?? 10 * mag;
 }
 
-/** Hover: the week under the pointer, its hours and labor $. Wired once on the fee page. */
+/** Hover: the week under the pointer, its phase, hours and labor $. Wired once on the fee page. */
 export function onFeeTimeMove(e: MouseEvent, f: SavedFee | null) {
   const box = (e.target as Element).closest?.(".fee-time-chart") as HTMLElement | null;
   const svg = box?.querySelector("svg");
@@ -102,13 +156,15 @@ export function onFeeTimeMove(e: MouseEvent, f: SavedFee | null) {
   const r = svg.getBoundingClientRect();
   const x = ((e.clientX - r.left) / r.width) * W;
   if (x < PAD.l || x > W - PAD.r) return hideFeeTimeTip();
-  const i = Math.round(((x - PAD.l) / (W - PAD.l - PAD.r)) * (weeks - 1));
-  const h = weeklyHours(totals(f).laborHours, weeks)[Math.max(0, Math.min(weeks - 1, i))];
-  const cx = PAD.l + (weeks <= 1 ? 0 : (i / (weeks - 1)) * (W - PAD.l - PAD.r));
+  const i = Math.max(0, Math.min(weeks - 1, Math.floor(((x - PAD.l) / (W - PAD.l - PAD.r)) * weeks)));
+  const spans = phaseSpans(f, weeks);
+  const h = weeklyHours(spans, weeks)[i];
+  const phase = spans.find((s) => i + 0.5 >= s.start && i + 0.5 < s.end)?.name ?? "";
+  const cx = PAD.l + ((i + 0.5) / weeks) * (W - PAD.l - PAD.r);
   cross.setAttribute("x1", String(cx));
   cross.setAttribute("x2", String(cx));
   cross.setAttribute("visibility", "visible");
-  tip.innerHTML = `Week ${i + 1} (month ${Math.floor(i / WEEKS_PER_MONTH) + 1}): <b>${esc(hrs(h))} hours</b> · ${esc(money(h * rate))}`;
+  tip.innerHTML = `Week ${i + 1} (month ${Math.floor(i / WEEKS_PER_MONTH) + 1})${phase ? `, ${esc(phase)}` : ""}: <b>${esc(hrs(h))} hours</b> · ${esc(money(h * rate))}`;
   tip.hidden = false;
   const left = (cx / W) * r.width;
   tip.style.left = `${Math.min(r.width - tip.offsetWidth, Math.max(0, left + 10))}px`;

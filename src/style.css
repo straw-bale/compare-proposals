@@ -735,5 +735,26 @@ dialog.modal.pdf-page { max-width: 960px; padding: 16px 20px 20px; }
 .fee-time-chart .tick { font-size: 11px; fill: var(--ink); }
 .fee-time-chart .axis { font-size: 12px; fill: var(--ink); }
 .fee-time-chart .curve { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.fee-time-chart .phase { font-size: 11px; fill: var(--ink); }
+.fee-time-chart .phase-line { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 3; }
 .fee-time-chart .cross { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
-.fee-time-tip { position: absolute; top: 0; background: var(--bg); border: 1px solid var(--ink); padding: 4px 8px; font-size: 12px; white-space: nowrap; pointer-events: none; }
+.fee-time-tip { position: absolute; top: 30px; background: var(--bg); border: 1px solid var(--ink); padding: 4px 8px; font-size: 12px; white-space: nowrap; pointer-events: none; }
+
+/* Fee summary lines, editable in place. */
+.fee-sum { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 4px; }
+.fee-sum-line { display: flex; align-items: center; gap: 6px; }
+#fee-page .fee-sum-in { flex: 1; width: auto; }
+
+/* Fee phases: move up / down. */
+.fee-move { display: inline-flex; gap: 2px; }
+.fee-move button { font-size: 15px; padding: 0 4px; text-decoration: none; }
+.fee-move button:disabled { color: var(--muted); cursor: default; opacity: 0.4; }
+
+/* Schedule snapshot on the project page (src/schedule-snapshot.ts). */
+.schedule-snap { display: block; max-width: 900px; margin-top: 12px; padding: 8px; border: 1px solid var(--ink); color: inherit; text-decoration: none; }
+.schedule-snap:hover { background: var(--soft); }
+.schedule-snap svg { width: 100%; height: auto; display: block; }
+.schedule-snap .snap-name { font-size: 11px; fill: var(--ink); }
+.schedule-snap .snap-month { font-size: 10px; fill: var(--muted); }
+.schedule-snap .snap-grid { stroke: var(--rule); stroke-width: 1; }
+.schedule-snap .snap-today { stroke: #e8000b; stroke-width: 1; stroke-dasharray: 3 2; }

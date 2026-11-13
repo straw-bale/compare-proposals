@@ -106,7 +106,7 @@ export function isLightColor(hex) {
 /** Earliest task start and latest task end across all tasks */
 export function projectDateRange(tasks) {
   const dates = tasks.flatMap(t =>
-    t.type === 'milestone' ? [t.date] : [t.start, t.end]
+    t.type === 'milestone' ? [t.date, ...(t.extraDates ?? [])] : [t.start, t.end]
   ).filter(Boolean);
   if (!dates.length) return { start: null, end: null };
   return {

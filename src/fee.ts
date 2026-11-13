@@ -157,12 +157,19 @@ function openAssistant() {
       const rfps = await listRfps();
       return (rfps.find((r) => r.id === project.rfpId) ?? rfps.find((r) => r.projectId === project.id))?.rfp ?? null;
     },
-    apply: (changes) => {
+    apply: (changes, assumptions) => {
       if (!fee) return { applied: 0, skipped: changes.length };
       checkpoint(); // anything typed before asking is its own step
       const result = applyFeeChanges(fee, changes);
       result.phases.forEach((id) => openPhases.add(id)); // show what changed
-      if (result.applied) rerender();
+      // The summary at the top, revised to match (same undo step).
+      const lines = assumptions.map((a) => a.trim().slice(0, 500)).filter(Boolean).slice(0, 12);
+      if (lines.length) {
+        fee.draft ??= { basis: "", assumptions: [], costUsd: null, at: Date.now(), source: "notes" };
+        fee.draft.assumptions = lines;
+        fee.draft.revisedAt = Date.now();
+      }
+      if (result.applied || lines.length) rerender();
       return result;
     },
   });
@@ -399,22 +406,7 @@ function render() {
         ? `For project <a class="link" href="#project/${encodeURIComponent(project.id)}">${esc(projectLabel(project))}</a> <button class="link" data-unlink-fee>Unlink</button>`
         : `Not linked to a project. <button class="link" data-link-fee>Link to project</button>`
     }</p>
-    ${
-      f.draft
-        ? `<div class="block fee-draft">
-            <h2 class="label">Architecture and interiors drafted by AI from the RFP review. Check every number.</h2>
-            <ul>${[f.draft.basis, ...f.draft.assumptions].filter(Boolean).map((a) => `<li>${esc(a)}</li>`).join("")}</ul>
-            <p class="note">${[
-              f.lens
-                ? `Drafted with the <a class="link" href="#worldview">world view</a>${f.lens.savedAt ? ` of ${esc(new Date(f.lens.savedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }))}` : ""}${f.lens.text ? "" : " (none written yet)"}`
-                : "",
-              f.draft.costUsd != null ? `Draft cost ${esc(usd(f.draft.costUsd))}` : "",
-            ]
-              .filter(Boolean)
-              .join(" · ")}</p>
-          </div>`
-        : ""
-    }
+    ${summaryHtml(f)}
 
     <div class="fee-top">
     <div class="block">
@@ -505,6 +497,33 @@ function render() {
   refresh();
 }
 
+const shortDate = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+/**
+ * The fee's summary at the top: the AI draft's budget basis and assumptions, or the team's own list. Every line can be
+ * edited, removed or added; the AI assistant revises it when it changes the fee.
+ */
+function summaryHtml(f: SavedFee): string {
+  const d = f.draft;
+  const fromRfp = !!d && d.source !== "notes";
+  const line = (key: string, value: string, removable: boolean) =>
+    `<li class="fee-sum-line">${input(`data-sum="${key}" aria-label="Summary line"`, value, "fee-sum-in")}${removable ? `<button class="link" data-del-sum="${key}" aria-label="Remove line" title="Remove">×</button>` : ""}</li>`;
+  const lines = d ? [...(d.basis ? [line("basis", d.basis, true)] : []), ...d.assumptions.map((a, i) => line(`a:${i}`, a, true))] : [];
+  const notes = [
+    fromRfp && f.lens
+      ? `Drafted with the <a class="link" href="#worldview">world view</a>${f.lens.savedAt ? ` of ${esc(shortDate(f.lens.savedAt))}` : ""}${f.lens.text ? "" : " (none written yet)"}`
+      : "",
+    fromRfp && d!.costUsd != null ? `Draft cost ${esc(usd(d!.costUsd))}` : "",
+    d?.revisedAt ? `Revised by the AI assistant ${esc(shortDate(d.revisedAt))}` : "",
+  ].filter(Boolean);
+  return `<div class="block fee-draft">
+      <h2 class="label">${fromRfp ? "Architecture and interiors drafted by AI from the RFP review. Check every number." : "Assumptions"}</h2>
+      ${lines.length ? `<ul class="fee-sum">${lines.join("")}</ul>` : ""}
+      <button class="link" data-add-sum>+ Add line</button>
+      ${notes.length ? `<p class="note">${notes.join(" · ")}</p>` : ""}
+    </div>`;
+}
+
 /** One line per phase (name, typical share, hours, cost); its task table opens below it. */
 function phaseHtml(p: SavedFee["phases"][number]): string {
   const f = fee!;
@@ -515,6 +534,10 @@ function phaseHtml(p: SavedFee["phases"][number]): string {
       ${input(`data-phase="${esc(p.id)}" data-f="name" aria-label="Phase name"`, p.name, "fee-phase-name")}
       <span class="note">Typical <span data-out="typical:${esc(p.id)}"></span></span>
       <span class="fee-phase-sum"><span data-out="phase-hours:${esc(p.id)}"></span> hrs · <b data-out="phase-cost:${esc(p.id)}"></b></span>
+      <span class="fee-move">
+        <button class="link" data-move-phase="${esc(p.id)}" data-dir="-1" aria-label="Move ${esc(p.name)} up" title="Move up" ${f.phases[0] === p ? "disabled" : ""}>↑</button>
+        <button class="link" data-move-phase="${esc(p.id)}" data-dir="1" aria-label="Move ${esc(p.name)} down" title="Move down" ${f.phases[f.phases.length - 1] === p ? "disabled" : ""}>↓</button>
+      </span>
       <button class="link" data-remove-phase="${esc(p.id)}">Remove</button>
     </div>
     ${
@@ -571,7 +594,6 @@ function refresh() {
   // A phase whose share of labor is more than 5 points off its typical share is marked.
   const off = (share: number | null, target: number) => share != null && Math.abs(share - target) > 5;
   const diff = t.target != null ? t.total - t.target : null;
-  const diffPoints = t.percentOfBudget != null && f.targetPercent != null ? t.percentOfBudget - f.targetPercent : null;
   const sign = (n: number) => (n > 0 ? "+" : n < 0 ? "−" : "");
   $("fee-proposal").innerHTML = proposalHtml(proposalTable(f));
   $("fee-time").innerHTML = feeTimeHtml(f);
@@ -595,7 +617,7 @@ function refresh() {
       <tr><th scope="row">Construction budget</th><td>${money(t.budget)}</td></tr>
       <tr><th scope="row">Fee as % of construction</th><td>${pct(t.percentOfBudget)}</td></tr>
       <tr><th scope="row">Target</th><td>${f.targetPercent != null ? `${pct(f.targetPercent)} = ${money(t.target)}${f.targetFromCurve ? ` <span class="note">from the <a class="link" href="#worldview">fee curve</a></span>` : ""}` : "—"}</td></tr>
-      <tr><th scope="row">Difference from target</th><td>${diff != null ? `${sign(diff)}${money(Math.abs(diff))}${diffPoints != null ? ` (${sign(diffPoints)}${Math.abs(diffPoints).toLocaleString("en-US", { maximumFractionDigits: 1 })} points)` : ""}` : "—"}</td></tr>
+      <tr><th scope="row">Difference from target</th><td>${diff != null ? `${sign(diff)}${money(Math.abs(diff))}` : "—"}</td></tr>
     </table>`;
 }
 
@@ -737,6 +759,10 @@ function onInput(e: Event) {
     }
     // A target from the fee curve follows the budget.
     if (k.startsWith("budget.") && f.targetFromCurve) followCurve(f);
+  } else if (el.dataset.sum && f.draft) {
+    const key = el.dataset.sum;
+    if (key === "basis") f.draft.basis = v;
+    else if (key.startsWith("a:")) f.draft.assumptions[Number(key.slice(2))] = v;
   } else if (el.dataset.role) {
     const r = f.roles.find((x) => x.id === el.dataset.role);
     if (!r) return;
@@ -832,6 +858,16 @@ async function onClick(e: Event) {
     openPhases.clear();
     if (!allOpen) f.phases.forEach((p) => openPhases.add(p.id));
     rerender(false);
+  } else if (t.closest("[data-add-sum]")) {
+    f.draft ??= { basis: "", assumptions: [], costUsd: null, at: Date.now(), source: "notes" };
+    f.draft.assumptions.push("");
+    rerender();
+    const boxes = document.querySelectorAll<HTMLInputElement>("#fee-page [data-sum]");
+    boxes[boxes.length - 1]?.focus();
+  } else if ((id = attr("data-del-sum")) && f.draft) {
+    if (id === "basis") f.draft.basis = "";
+    else f.draft.assumptions.splice(Number(id.slice(2)), 1);
+    rerender();
   } else if (t.closest("[data-add-role]")) {
     f.roles.push({ id: crypto.randomUUID(), name: "New role", rate: null });
     rerender();
@@ -840,6 +876,14 @@ async function onClick(e: Event) {
     f.phases.push(phase);
     openPhases.add(phase.id);
     rerender();
+  } else if ((id = attr("data-move-phase"))) {
+    // One place up or down; the summary, consultants, proposal table and hours chart follow the new order.
+    const i = f.phases.findIndex((p) => p.id === id);
+    const j = i + Number(t.closest("[data-move-phase]")!.getAttribute("data-dir"));
+    if (i < 0 || j < 0 || j >= f.phases.length) return;
+    [f.phases[i], f.phases[j]] = [f.phases[j], f.phases[i]];
+    rerender();
+    document.querySelector<HTMLButtonElement>(`#fee-page [data-move-phase="${CSS.escape(id)}"][data-dir="${j < i ? -1 : 1}"]:not(:disabled)`)?.focus();
   } else if ((id = attr("data-remove-phase"))) {
     f.phases = f.phases.filter((p) => p.id !== id);
     rerender();

@@ -1,6 +1,7 @@
 import { DISCIPLINES, toDisciplines } from "../lib/disciplines";
 import { askProjectName, confirmModal, confirmTyped, formModal, noticeModal } from "./modal";
 import { makeFee, proposalHtml, withWaiting } from "./fee";
+import { scheduleSnapshotHtml } from "./schedule-snapshot";
 import { SCHEDULE_TEMPLATES } from "./schedule/lib/data/templates.js";
 import { post } from "./api";
 import { estimateScheduleDraft, usdRange, type Usage } from "../lib/cost";
@@ -141,6 +142,7 @@ function render() {
               .join("")}</ol>`
           : `<p class="none">None yet.</p>`
       }
+      ${schedules[0] ? scheduleSnapshotHtml(schedules[0]) : ""}
       ${schedules.length ? "" : `<div class="actions"><button class="btn" data-make-schedule>Make schedule</button></div>`}
     </div>
 
@@ -298,7 +300,47 @@ function scheduleFromDraft(d: ScheduleDraft): SavedSchedule {
     todayMark: iso(new Date()),
     nextTaskId: tasks.length + 1,
     tasks: tasks.length ? tasks : [{ id: 1, name: "Project Kick-Off", type: "milestone", date: iso(start) }],
-    legend: { deliverables: [], milestones: [], estimates: [], approvals: [] },
+    legend: legendFromDraft(d),
+  };
+}
+
+/**
+ * The legend for an AI-drafted schedule, built the way the templates build theirs: drawings due at the end of each
+ * design phase, cost estimates at the end of SD and DD, bidding kick-off, substantial completion, occupancy, and the
+ * permit approval. Only what the draft has a date for.
+ */
+function legendFromDraft(d: ScheduleDraft) {
+  const ok = (s: string) => ISO_DAY.test(s);
+  const bars = d.tasks.filter((t) => t.kind !== "milestone" && ok(t.start) && ok(t.end)).map((t) => (t.start <= t.end ? t : { ...t, start: t.end, end: t.start }));
+  const lastEnd = (kind: string, name?: RegExp) => bars.filter((t) => t.kind === kind && (!name || name.test(t.name))).map((t) => t.end).sort().pop() ?? "";
+  const firstStart = (kind: string) => bars.filter((t) => t.kind === kind).map((t) => t.start).sort()[0] ?? "";
+  const milestone = (name: RegExp) => d.tasks.find((t) => t.kind === "milestone" && name.test(t.name) && ok(t.date))?.date ?? "";
+  const prog = lastEnd("design", /program|pre-?design/i);
+  const sd = lastEnd("design", /schematic|\bSD\b/i);
+  const dd = lastEnd("design", /design dev|\bDD\b/i);
+  const cd = lastEnd("design", /construction doc|\bCDs?\b/i);
+  const bid = firstStart("bidding");
+  const built = lastEnd("construction");
+  const occupancy = milestone(/occupan/i) || lastEnd("closeout");
+  const permit = lastEnd("permit");
+  const keep = <T extends { date: string }>(items: T[]) => items.filter((i) => i.date);
+  return {
+    deliverables: keep([
+      { num: 1, text: "Programming Document", label: "", date: prog },
+      { num: 2, text: "Schematic Design Drawings", label: "", date: sd },
+      { num: 3, text: "Design Development Drawings", label: "", date: dd },
+      { num: 4, text: "100% Construction Drawings", label: "", date: cd },
+    ]).map((x, i) => ({ ...x, num: i + 1 })),
+    milestones: keep([
+      { color: "#282829", code: "BK", text: "Bidding Kick-Off", date: bid },
+      { color: "#6D245D", code: "SC", text: "Substantial Completion", date: built },
+      { color: "#20ABE2", code: "OC", text: "Project Occupancy / Beneficial Occupancy", date: occupancy },
+    ]),
+    estimates: keep([
+      { color: "#00914D", code: "SD", text: "Schematic Design", date: sd },
+      { color: "#00914D", code: "DD", text: "Design Development", date: dd },
+    ]),
+    approvals: keep([{ text: "Building Permit Approval", date: permit }]),
   };
 }
 

@@ -439,7 +439,7 @@
 
   // The assistant's whole reply is checked and applied as one edit, so one Undo reverses it.
   function handleAiChanges(changes) {
-    projectStore.applyChanges(data.id, changes);
+    return projectStore.applyChanges(data.id, changes);
   }
 
   function openPrintPanel() {

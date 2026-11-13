@@ -90,7 +90,14 @@ async function _deleteProject(id) {
 
 // Point-in-time markers (milestones, deliverables, approvals, estimates) can't land on weekends.
 function _weekdayDate(obj) {
-  return obj?.date ? { ...obj, date: toWeekday(obj.date) } : obj;
+  if (!obj) return obj;
+  let out = obj.date ? { ...obj, date: toWeekday(obj.date) } : obj;
+  // A milestone's extra marks on its row: valid days only, on weekdays, at most 30.
+  if ('extraDates' in out) {
+    const list = Array.isArray(out.extraDates) ? out.extraDates : [];
+    out = { ...out, extraDates: list.filter(d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 30).map(toWeekday) };
+  }
+  return out;
 }
 
 // Brings previously saved projects up to the current color conventions:
@@ -111,7 +118,7 @@ export function normalizeProject(project) {
 }
 
 // What the assistant may change on a task or legend item (never ids or links).
-const TASK_FIELDS = ['name', 'type', 'color', 'start', 'end', 'date', 'msRef', 'note'];
+const TASK_FIELDS = ['name', 'type', 'color', 'start', 'end', 'date', 'extraDates', 'msRef', 'note'];
 const LEGEND_FIELDS = ['text', 'label', 'date', 'color', 'code'];
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -179,12 +186,15 @@ export const projectStore = {
    * can only move its date range, tasks keep their ids, new tasks always get an unused id, and legend changes must
    * name a real section and item. Anything else in a change is ignored.
    */
+  /** Applies the assistant's changes; returns how many applied and how many were skipped (bad ids, fields, dates). */
   applyChanges(projectId, changes) {
-    if (!Array.isArray(changes) || !changes.length) return;
+    const result = { applied: 0, skipped: 0 };
+    if (!Array.isArray(changes) || !changes.length) return result;
     _updateAndSave(projectId, p => {
       let next = { ...p, tasks: [...(p.tasks ?? [])], legend: { ...(p.legend ?? {}) } };
       const pick = (obj, keys) => Object.fromEntries(Object.entries(obj ?? {}).filter(([k]) => keys.includes(k)));
       for (const c of changes) {
+        const before = JSON.stringify(next);
         if (c?.type === 'updateView') {
           const v = pick(c.patch, ['viewStart', 'viewEnd']);
           for (const k of Object.keys(v)) if (!ISO.test(v[k])) delete v[k];
@@ -204,13 +214,26 @@ export const projectStore = {
           next.tasks = next.tasks.filter(t => t.id !== c.taskId);
         } else if (c?.type === 'updateLegendItem' && LEGEND_SECTIONS.includes(c.section)) {
           const items = next.legend[c.section] ?? [];
-          if (!Number.isInteger(c.index) || !items[c.index]) continue;
+          if (!Number.isInteger(c.index) || !items[c.index]) { result.skipped++; continue; }
           const patch = _weekdayDate(pick(c.patch, LEGEND_FIELDS));
           next.legend[c.section] = _byDate(items.map((it, i) => (i === c.index ? { ...it, ...patch } : it)));
+        } else if (c?.type === 'addLegendItem' && LEGEND_SECTIONS.includes(c.section) && c.item && typeof c.item === 'object') {
+          const item = _weekdayDate(pick(c.item, LEGEND_FIELDS));
+          if (item.date && !ISO.test(item.date)) delete item.date;
+          if (item.color && !/^#[0-9a-f]{3,8}$/i.test(item.color)) delete item.color;
+          if (!String(item.text ?? '').trim()) { result.skipped++; continue; }
+          next.legend[c.section] = _byDate([...(next.legend[c.section] ?? []), item]);
+        } else if (c?.type === 'deleteLegendItem' && LEGEND_SECTIONS.includes(c.section)) {
+          const items = next.legend[c.section] ?? [];
+          if (!Number.isInteger(c.index) || !items[c.index]) { result.skipped++; continue; }
+          next.legend[c.section] = items.filter((_, i) => i !== c.index);
         }
+        if (JSON.stringify(next) === before) result.skipped++;
+        else result.applied++;
       }
       return next;
     });
+    return result;
   },
 
   updateTask(projectId, taskId, patch) {

@@ -158,14 +158,15 @@
   }
 
   // Bar drag (move / left-resize / right-resize). On touch: long-press to drag, tap to edit.
-  function startDrag(e, task, mode) {
+  function startDrag(e, task, mode, which = -1) {
     e.stopPropagation();
 
     const pxPerDay  = ganttWidth / totalDays(viewStart, viewEnd);
     const startX    = e.clientX;
     const origStart = task.start;
     const origEnd   = task.end;
-    const origDate  = task.date;
+    const extras    = task.extraDates ?? [];
+    const origDate  = which >= 0 ? extras[which] : task.date;
 
     pointerDrag(e, {
       onStart() {
@@ -179,7 +180,8 @@
 
         if (task.type === 'milestone') {
           const d = parseDate(origDate); d.setDate(d.getDate() + dd);
-          draft.date = toWeekday(toISO(d));
+          if (which >= 0) draft.extraDates = extras.map((x, i) => (i === which ? toWeekday(toISO(d)) : x));
+          else draft.date = toWeekday(toISO(d));
         } else if (mode === 'move') {
           const ns = parseDate(origStart); ns.setDate(ns.getDate() + dd);
           const ne = parseDate(origEnd);   ne.setDate(ne.getDate() + dd);
@@ -194,12 +196,12 @@
         draggingTask = draft;
       },
       onEnd() {
-        const patch = task.type === 'milestone'
-          ? { date: draggingTask.date }
-          : { start: draggingTask.start, end: draggingTask.end };
-        const changed = task.type === 'milestone'
-          ? patch.date !== origDate
-          : patch.start !== origStart || patch.end !== origEnd;
+        const patch = task.type !== 'milestone'
+          ? { start: draggingTask.start, end: draggingTask.end }
+          : which >= 0 ? { extraDates: draggingTask.extraDates } : { date: draggingTask.date };
+        const changed = task.type !== 'milestone'
+          ? patch.start !== origStart || patch.end !== origEnd
+          : which >= 0 ? patch.extraDates[which] !== origDate : patch.date !== origDate;
         if (changed) onTaskUpdate(task.id, patch);
         draggingId = null;
         draggingTask = null;
@@ -459,10 +461,19 @@
                 {#if task.label}
                   <div class="ms-lbl" style:left="{mpx + 8}px">{task.label}</div>
                 {/if}
-                <div class="ms-dot" style:left="{mpx}px"
+                <div class="ms-dot" style:left="{mpx}px" title={task.date}
                   ondblclick={(e) => openPopup(task, e.clientX, e.clientY)}
                   onpointerdown={(e) => startDrag(e, task, 'move')}></div>
               {/if}
+              <!-- More dates on the same row (e.g. several submissions), each its own mark -->
+              {#each task.extraDates ?? [] as xd, k}
+                {@const xpx = px(xd)}
+                {#if xd && xpx >= 0 && xpx <= ganttWidth}
+                  <div class="ms-dot" style:left="{xpx}px" title={xd}
+                    ondblclick={(e) => openPopup(task, e.clientX, e.clientY)}
+                    onpointerdown={(e) => startDrag(e, task, 'move', k)}></div>
+                {/if}
+              {/each}
 
             {:else}
               <!-- Clamp bar to visible range; badges always use raw right edge -->
@@ -540,6 +551,14 @@
     {#if popupTask.type === 'milestone'}
       <div class="dp-lbl">Date</div>
       <input type="date" value={popupTask.date} oninput={(e) => { const v = toWeekday(e.target.value); e.target.value = v; onPopupChange('date', v); }}>
+      {#if (popupTask.extraDates ?? []).length}<div class="dp-lbl">More dates on this line</div>{/if}
+      {#each popupTask.extraDates ?? [] as xd, k}
+        <div class="dp-extra">
+          <input type="date" value={xd} oninput={(e) => { const v = toWeekday(e.target.value); e.target.value = v; if (v) onPopupChange('extraDates', popupTask.extraDates.map((x, i) => (i === k ? v : x))); }}>
+          <button type="button" class="dp-x" title="Remove this date" aria-label="Remove this date" onclick={() => onPopupChange('extraDates', popupTask.extraDates.filter((_, i) => i !== k))}>✕</button>
+        </div>
+      {/each}
+      <button type="button" class="dp-add" onclick={() => { const last = [popupTask.date, ...(popupTask.extraDates ?? [])].filter(Boolean).sort().pop(); const d = parseDate(last ?? toISO(new Date())); d.setDate(d.getDate() + 14); onPopupChange('extraDates', [...(popupTask.extraDates ?? []), toWeekday(toISO(d))]); }}>+ Add another date</button>
     {:else}
       <div class="dp-lbl">Start</div>
       <input type="date" value={popupTask.start} oninput={(e) => onPopupChange('start', e.target.value)}>
@@ -760,6 +779,10 @@
   }
   .dp-close:hover { color: var(--black); }
   .dp-task-name { font-weight: 700; font-size: 12px; margin-bottom: 10px; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dp-extra { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+  .dp-extra input { flex: 1; }
+  .dp-x { border: 0; background: none; cursor: pointer; font-size: 12px; color: var(--black); padding: 2px 4px; }
+  .dp-add { border: 0; background: none; cursor: pointer; padding: 6px 0 0; font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--blue); }
   .dp-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--black); margin-bottom: 3px; margin-top: 8px; }
   .dp input[type="date"] {
     width: 100%; border: 1px solid var(--lgray); border-radius: 2px;

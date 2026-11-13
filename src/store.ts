@@ -252,7 +252,16 @@ export type SavedFee = {
   /** the target percent comes from the World view's fee curve, and follows the budget until someone types one */
   targetFromCurve?: boolean;
   /** set when the fee was drafted by AI from the RFP review: what it assumed, and what the draft cost */
-  draft?: { basis: string; assumptions: string[]; costUsd: number | null; at: number };
+  draft?: {
+    basis: string;
+    assumptions: string[];
+    costUsd: number | null;
+    at: number;
+    /** "notes" when the list was started on the worksheet or by the assistant, not drafted from the RFP review */
+    source?: "notes";
+    /** when the AI assistant last revised the list */
+    revisedAt?: number;
+  };
 };
 
 export const saveFee = (f: SavedFee, keepalive = false) => saveRecord("fees", f, keepalive);

@@ -636,6 +636,8 @@ export async function draftFee(
 // operations (see FEE_CHAT_SYSTEM) that the browser checks and applies, so it can't touch anything else.
 export const FeeChatSchema = z.object({
   reply: z.string(),
+  // The worksheet's assumptions list, revised; empty to leave it as it is.
+  assumptions: z.array(z.string()),
   changes: z.array(
     z.object({
       op: z.enum(["add_task", "update_task", "delete_task", "scale_hours", "set_value"]),

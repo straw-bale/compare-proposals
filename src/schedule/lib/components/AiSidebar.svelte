@@ -93,8 +93,10 @@
       if (jsonMatch) {
         try {
           const parsed = JSON.parse(jsonMatch[0]);
-          messages = [...messages, { role: 'bot', text: parsed.message ?? 'Done.' }];
-          if (parsed.changes?.length && onApplyChanges) onApplyChanges(parsed.changes);
+          // Say plainly when a change didn't take, rather than leave the reply claiming it did.
+          const result = parsed.changes?.length && onApplyChanges ? onApplyChanges(parsed.changes) : null;
+          const missed = result?.skipped ? ` (${result.skipped} of ${parsed.changes.length} change${parsed.changes.length === 1 ? '' : 's'} couldn't be applied${result.applied ? '' : ', so nothing changed'}.)` : '';
+          messages = [...messages, { role: 'bot', text: (parsed.message ?? 'Done.') + missed }];
         } catch {
           messages = [...messages, { role: 'bot', text: raw }];
         }

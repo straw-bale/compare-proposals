@@ -43,6 +43,7 @@ export function worksheetFor(f: SavedFee) {
     markup_percent: f.markupPercent,
     expenses: f.expenses,
     duration_months: f.durationMonths ?? null,
+    summary: { budget_basis: f.draft?.basis ?? "", assumptions: (f.draft?.assumptions ?? []).filter((a) => a.trim()) },
     roles: f.roles.map((r) => ({ id: r.id, name: r.name, short: r.short ?? "", rate: r.rate, hours: round(t.roleHours[r.id] ?? 0) })),
     phases,
     consultants: f.consultants.map((c) => ({ discipline: c.discipline, firm: c.firm, fee: round(f.phases.reduce((s, p) => s + (c.byPhase?.[p.id] ?? 0), 0)) })),
@@ -164,7 +165,7 @@ type Hooks = {
   /** the linked project's RFP review, if any */
   rfp: () => Promise<unknown>;
   /** applies edits as one undoable, saved step; returns what happened */
-  apply: (changes: Change[]) => { applied: number; skipped: number };
+  apply: (changes: Change[], assumptions: string[]) => { applied: number; skipped: number };
 };
 let hooks: Hooks | null = null;
 
@@ -234,7 +235,7 @@ async function send(box: HTMLTextAreaElement) {
       { "content-type": "application/json", "x-action": "chat" },
     );
     if (hooks.fee()?.id !== f.id) return; // the fee was closed while waiting
-    const { applied, skipped } = res.answer.changes.length ? hooks.apply(res.answer.changes) : { applied: 0, skipped: 0 };
+    const { applied, skipped } = res.answer.changes.length || res.answer.assumptions.length ? hooks.apply(res.answer.changes, res.answer.assumptions) : { applied: 0, skipped: 0 };
     const meta = [
       applied ? `Worksheet updated (${applied} change${applied === 1 ? "" : "s"})` : "",
       skipped ? `${skipped} change${skipped === 1 ? "" : "s"} couldn't be applied` : "",
